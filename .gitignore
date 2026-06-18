@@ -58,3 +58,11 @@ nunit-*.xml
 
 **/bin/
 **/obj/
+**/out/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
