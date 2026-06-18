@@ -66,3 +66,22 @@ nunit-*.xml
 *.userosscache
 *.sln.docstates
 TestResults/
+
+
+# macOS
+.DS_Store
+
+# .NET build output, recursively
+**/bin/
+**/obj/
+
+# Optional project/user files
+*.http
+*.csproj.user
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE folders
+.vs/
