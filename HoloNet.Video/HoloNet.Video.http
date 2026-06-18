@@ -1,0 +1,6 @@
+@HoloNet.Video_HostAddress = http://localhost:5044
+
+GET {{HoloNet.Video_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
