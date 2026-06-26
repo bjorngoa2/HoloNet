@@ -19,8 +19,11 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
     public Task<IEnumerable<VideoDto>> GetAllAsync()
     {
         string[] validExtensions = [".mp4", ".mkv", ".avi", ".mov"];
-        
-        var videoFileNames = Directory.GetFiles(_videoServiceOptions.VideoPath)
+
+        var directory = _videoServiceOptions.GetVideoDirectory();
+        var baseUrl = _videoServiceOptions.GetBaseUrl();
+
+        var videoFileNames = Directory.GetFiles(directory.Path)
             .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
         List<VideoDto> videos = [];
@@ -28,7 +31,7 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         {
             var fileInfo = new FileInfo(filename);
             var urlSafeId = FileId.Encode(filename);
-            var streamUrl = $"{_videoServiceOptions.BaseUrl}/{urlSafeId}/stream";
+            var streamUrl = $"{baseUrl}/{urlSafeId}/stream";
 
             videos.Add(new VideoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
                 fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl));
@@ -61,7 +64,7 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
             return Task.FromResult<VideoDto?>(null);
 
         var fileInfo = new FileInfo(filename);
-        var streamUrl = $"{_videoServiceOptions.BaseUrl}/{FileId.Encode(filename)}/stream";
+        var streamUrl = $"{_videoServiceOptions.GetBaseUrl()}/{FileId.Encode(filename)}/stream";
 
         var metadata = new VideoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
             fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl);

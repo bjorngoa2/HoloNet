@@ -19,8 +19,11 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
     public Task<IEnumerable<PhotoDto>> GetAllAsync()
     {
         string[] validExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
-        
-        var fileNames = Directory.GetFiles(_photoServiceOptions.PhotoPath)
+
+        var directory = _photoServiceOptions.GetPhotoDirectory();
+        var baseUrl = _photoServiceOptions.GetBaseUrl();
+
+        var fileNames = Directory.GetFiles(directory.Path)
             .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
         List<PhotoDto> photos = [];
@@ -28,7 +31,7 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
         {
             var fileInfo = new FileInfo(filename);
             var urlSafeId = FileId.Encode(filename);
-            var imageUrl = $"{_photoServiceOptions.BaseUrl}/{urlSafeId}/image";
+            var imageUrl = $"{baseUrl}/{urlSafeId}/image";
 
             photos.Add(new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
                 fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl));
@@ -47,7 +50,7 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
             return Task.FromResult<PhotoDto?>(null);
 
         var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_photoServiceOptions.BaseUrl}/{FileId.Encode(filename)}/image";
+        var readUrl = $"{_photoServiceOptions.GetBaseUrl()}/{FileId.Encode(filename)}/image";
 
         var photoMetadata = new PhotoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
             fileInfo.LastWriteTimeUtc, fileInfo.Length, readUrl);

@@ -21,8 +21,11 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 
     public async Task<IEnumerable<GameDto>> GetAllAsync()
     {
+        var directory = _gameServiceOptions.GetGameDirectory();
+        var baseUrl = _gameServiceOptions.GetBaseUrl();
+
         var files = Directory
-            .EnumerateFiles(_gameServiceOptions.GamePath, "*", SearchOption.AllDirectories)
+            .EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
             .Where(x => string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
 
         List<GameDto> games = [];
@@ -30,7 +33,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         {
             var fileInfo = new FileInfo(filePath);
             var urlSafeId = FileId.Encode(filePath);
-            var readUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
+            var readUrl = $"{baseUrl}/{urlSafeId}/game";
 
             await using var stream = File.OpenRead(filePath);
             var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, JsonOptions);
@@ -61,7 +64,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             return null;
 
         var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_gameServiceOptions.BaseUrl}/{FileId.Encode(filename)}/game";
+        var readUrl = $"{_gameServiceOptions.GetBaseUrl()}/{FileId.Encode(filename)}/game";
 
         await using var fileStream = File.OpenRead(filename);
         var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, JsonOptions);
