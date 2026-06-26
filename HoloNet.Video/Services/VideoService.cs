@@ -23,7 +23,7 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         var directory = _videoServiceOptions.GetVideoDirectory();
         var baseUrl = _videoServiceOptions.GetBaseUrl();
 
-        var videoFileNames = Directory.GetFiles(directory.Path)
+        var videoFileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
             .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
         List<VideoDto> videos = [];

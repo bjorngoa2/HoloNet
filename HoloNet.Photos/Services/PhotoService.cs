@@ -23,7 +23,7 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
         var directory = _photoServiceOptions.GetPhotoDirectory();
         var baseUrl = _photoServiceOptions.GetBaseUrl();
 
-        var fileNames = Directory.GetFiles(directory.Path)
+        var fileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
             .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
         List<PhotoDto> photos = [];
