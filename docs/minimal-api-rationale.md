@@ -31,13 +31,13 @@ app.MapGet("api/v1/videos", async (IVideoService service) =>
 {
     var result = await service.GetAllAsync();
     return Results.Ok(result);
-}).WithName("GetVideos").WithOpenApi();
+}).WithName("GetVideos");
 
 app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 {
     var video = await service.GetAsync(id);
     return video is null ? Results.NotFound() : Results.Ok(video);
-}).WithName("GetVideo").WithOpenApi();
+}).WithName("GetVideo");
 
 app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service) =>
 {
@@ -45,7 +45,7 @@ app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service)
     return stream is null
         ? Results.NotFound()
         : Results.File(stream, "video/mp4", enableRangeProcessing: true);
-}).WithName("GetVideoStream").WithOpenApi();
+}).WithName("GetVideoStream");
 ```
 
 **Equivalent controller — same three endpoints, significantly more ceremony:**
@@ -124,6 +124,12 @@ improvements, and new features (e.g. typed results, endpoint filters, `IEndpoint
 
 Writing HoloNet in the current idiomatic style means less friction when consulting
 official docs and examples.
+
+> **Note — `.WithOpenApi()` is deprecated in .NET 10** (`ASPDEPR002`). The replacement
+> is `builder.Services.AddOpenApi()` in `Program.cs`, which automatically includes every
+> endpoint in the generated spec without per-endpoint decoration. HoloNet uses this
+> approach. `.WithName()` is still required and remains the correct convention for setting
+> the `operationId` and enabling URL generation via `LinkGenerator`.
 
 ---
 
