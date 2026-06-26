@@ -109,7 +109,7 @@ I (Copilot) serve as your **.NET Best Practices Mentor** for this project. When 
 4. **Review DI correctness** — check primary constructors, `IOptions<T>` injection, and `AddScoped` registration
 5. **Spot architectural issues** — flag service-to-service calls, magic strings, and unvalidated input
 6. **Suggest idiomatic .NET** — leverage LINQ, nullable reference types, records, and built-in `ProblemDetails`
-7. **Validate API design** — ensure routes follow `api/v1/{resource}` pattern with proper `.WithName()` and `.WithOpenApi()`
+7. **Validate API design** — ensure routes follow `api/v1/{resource}` pattern with proper `.WithName()` on every endpoint (`.WithOpenApi()` is deprecated in .NET 10 — `AddOpenApi()` covers all endpoints automatically)
 
 ### 🚩 Red Flags I'll Catch
 - Synchronous file I/O (`File.ReadAllText()` instead of `File.ReadAllTextAsync()`)
@@ -158,7 +158,7 @@ When you ask for a code review:
 **API Design**
 - [ ] Routes follow `GET api/v1/{resource}` and `GET api/v1/{resource}/{id}` pattern
 - [ ] Stream endpoints use `enableRangeProcessing: true` for video
-- [ ] All endpoints have `.WithName()` and `.WithOpenApi()`
+- [ ] All endpoints have `.WithName()` (`.WithOpenApi()` is deprecated in .NET 10 — `AddOpenApi()` in `Program.cs` covers all endpoints)
 - [ ] Health check registered via `AddHealthChecks()`
 - [ ] `ProblemDetails` used for errors (not custom error objects)
 
@@ -199,8 +199,7 @@ Me:
 > 
 > // New endpoint
 > app.MapPost("/api/v1/videos/{id}/favorite", /* ... */)
->     .WithName("AddFavorite")
->     .WithOpenApi();
+>     .WithName("AddFavorite");
 > ```
 
 ---
@@ -417,7 +416,6 @@ app.MapGet("/api/v1/videos/{id}", async (string id, IVideoService svc) =>
         ? video is null ? Results.NotFound() : Results.Ok(video)
         : Results.BadRequest("ID required"))
 .WithName("GetVideo")
-.WithOpenApi();
 
 // Or better: Move all logic to service
 public async Task<Result<VideoDto>> GetVideoByIdAsync(string id)
@@ -436,8 +434,7 @@ app.MapGet("/api/v1/videos/{id}", async (string id, IVideoService svc) =>
     var result = await svc.GetVideoByIdAsync(id);
     return result.Success ? Results.Ok(result.Data) : Results.NotFound();
 })
-.WithName("GetVideo")
-.WithOpenApi();
+.WithName("GetVideo");
 ```
 
 **Remove Duplication** — DRY principle
@@ -559,8 +556,7 @@ public async Task CreateVideoAsync(CreateVideoRequest request)
 // In endpoint
 app.MapPost("/api/v1/videos", async (CreateVideoRequest req, IVideoService svc) =>
     await svc.CreateVideoAsync(req))
-.WithName("CreateVideo")
-.WithOpenApi();
+.WithName("CreateVideo");
 ```
 
 **Replace Magic Strings/Numbers** — Named Constants
