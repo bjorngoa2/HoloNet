@@ -10,7 +10,6 @@ public interface IGameService
 {
     Task<IEnumerable<GameDto>> GetAllAsync();
     Task<GameDto?> GetAsync(string id);
-    Task<Stream?> OpenReadAsync(string id);
 }
 
 public class GameService(IOptions<GameServiceOptions> options) : IGameService
@@ -22,7 +21,6 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
     public async Task<IEnumerable<GameDto>> GetAllAsync()
     {
         var directory = _gameServiceOptions.GetGameDirectory();
-        var baseUrl = _gameServiceOptions.GetBaseUrl();
 
         var files = Directory
             .EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
@@ -31,9 +29,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         List<GameDto> games = [];
         foreach (var filePath in files)
         {
-            var fileInfo = new FileInfo(filePath);
             var urlSafeId = FileId.Encode(filePath);
-            var readUrl = $"{baseUrl}/{urlSafeId}/game";
 
             await using var stream = File.OpenRead(filePath);
             var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, JsonOptions);
@@ -46,8 +42,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
                 metadata.Platform,
                 metadata.Description,
                 metadata.Year,
-                fileInfo.Length,
-                readUrl
+                metadata.Genre
             ));
         }
 
@@ -63,9 +58,6 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         if (!File.Exists(filename))
             return null;
 
-        var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_gameServiceOptions.GetBaseUrl()}/{FileId.Encode(filename)}/game";
-
         await using var fileStream = File.OpenRead(filename);
         var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, JsonOptions);
 
@@ -78,22 +70,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             metadata.Platform,
             metadata.Description,
             metadata.Year,
-            fileInfo.Length,
-            readUrl
+            metadata.Genre
         );
-    }
-
-    public Task<Stream?> OpenReadAsync(string id)
-    {
-        var filename = FileId.TryDecode(id);
-        if (filename is null)
-            return Task.FromResult<Stream?>(null);
-
-        if (!File.Exists(filename))
-            return Task.FromResult<Stream?>(null);
-
-        Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-        return Task.FromResult<Stream?>(stream);
     }
 }

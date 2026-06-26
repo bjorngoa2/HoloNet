@@ -6,6 +6,5 @@ public record GameDto(
     string Platform,
     string? Description,
     int? Year,
-    long FileSizeBytes,
-    string ReadUrl
+    string[]? Genre
 );

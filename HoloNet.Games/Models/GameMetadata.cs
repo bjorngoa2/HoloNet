@@ -5,4 +5,4 @@ public record GameMetadata(
     string Platform,
     string? Description,
     int? Year,
-    long? FileSize);
+    string[]? Genre);

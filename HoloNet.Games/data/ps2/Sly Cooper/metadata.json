@@ -1,6 +1,7 @@
 {
-  "title": "Sly Cooper",
-  "platform": "ps2",
-  "genre": ["Action", "Platformer"],
-  "year": 2002
+  "title": "Sly Cooper and the Thievius Raccoonus",
+  "platform": "PS2",
+  "description": "Sly Cooper and the Thievius Raccoonus is a 2002 stealth platformer developed by Sucker Punch Productions and published by Sony Computer Entertainment.",
+  "year": 2002,
+  "genre": ["Stealth", "Platformer"]
 }

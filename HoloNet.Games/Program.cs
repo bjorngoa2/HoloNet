@@ -34,27 +34,15 @@ app.MapGet("api/v1/games", async (IGameService service) =>
 
 app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
 {
-    var photoMetadata = await service.GetAsync(id);
+    var game = await service.GetAsync(id);
 
-    if (photoMetadata is null)
+    if (game is null)
     {
         return Results.NotFound();
     }
 
-    return Results.Ok(photoMetadata);
+    return Results.Ok(game);
 }).WithName("GetGame");
-
-app.MapGet("api/v1/games/{id}/game", async (IGameService service, string id) =>
-{
-    var stream = await service.OpenReadAsync(id);
-
-    if (stream is null)
-    {
-        return Results.NotFound();
-    }
-
-    return Results.File(stream, "application/octet-stream");
-}).WithName("GetGameFile");
 
 
 app.Run();
