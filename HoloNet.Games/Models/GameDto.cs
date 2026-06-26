@@ -3,9 +3,9 @@ namespace HoloNet.Games.Models;
 public record GameDto(
     string Id,
     string Title,
-    string Extension,
-    DateTime CreatedAt,
-    DateTime ModifiedAt,
+    string Platform,
+    string? Description,
+    int? Year,
     long FileSizeBytes,
     string ReadUrl
 );

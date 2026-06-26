@@ -9,7 +9,7 @@ namespace HoloNet.Games.Services;
 
 public interface IGameService
 {
-    Task<IEnumerable<GameMetadata>> GetAllAsync();
+    Task<IEnumerable<GameDto>> GetAllAsync();
     Task<GameDto?> GetAsync(string id);
     Task<Stream?> OpenReadAsync(string id);
 }
@@ -18,66 +18,75 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 {
     private readonly GameServiceOptions _gameServiceOptions = options.Value;
 
-    public async Task<IEnumerable<GameMetadata>> GetAllAsync()
+    public async Task<IEnumerable<GameDto>> GetAllAsync()
     {
-        //string[] validExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
-
         var files = Directory
             .EnumerateFiles(_gameServiceOptions.GamePath, "*", SearchOption.AllDirectories)
             .Where(x => string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
 
-
-        List<GameMetadata> gamesMetaData = [];
+        List<GameDto> games = [];
         foreach (var filePath in files)
         {
             var fileInfo = new FileInfo(filePath);
-
-            // TODO: Get filesize of the game ISO ?
-            var fileSize = fileInfo.Length;
-
             var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filePath));
+            var readUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
 
             await using var stream = File.OpenRead(filePath);
-
-            var streamUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
             var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
-            
-            /*GameDto game = new GameDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc, fileInfo.LastWriteTimeUtc, fileSize, streamUrl);*/
-            
+
             if (metadata is null) continue;
-            
-            metadata = metadata.SetFileSize(fileSize);
-            gamesMetaData.Add(metadata);
+
+            games.Add(new GameDto(
+                urlSafeId,
+                metadata.Title,
+                metadata.Platform,
+                metadata.Description,
+                metadata.Year,
+                fileInfo.Length,
+                readUrl
+            ));
         }
 
-        return await Task.FromResult<IEnumerable<GameMetadata>>(gamesMetaData /*gamesMetaDataPaths*/);
+        return games;
     }
 
-    public Task<GameDto?> GetAsync(string id)
+    public async Task<GameDto?> GetAsync(string id)
     {
         var bytes = WebEncoders.Base64UrlDecode(id);
-
-
         var filename = Encoding.UTF8.GetString(bytes);
 
         if (!File.Exists(filename))
         {
-            return Task.FromResult<GameDto?>(null);
+            return null;
         }
 
         var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
-
         var fileInfo = new FileInfo(filename);
         var readUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
 
-        var photoMetadata = new GameDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-            fileInfo.LastWriteTimeUtc, fileInfo.Length, readUrl
+        await using var fileStream = File.OpenRead(filename);
+        var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (metadata is null)
+            return null;
+
+        var gameDto = new GameDto(
+            id,
+            metadata.Title,
+            metadata.Platform,
+            metadata.Description,
+            metadata.Year,
+            fileInfo.Length,
+            readUrl
         );
 
-        return Task.FromResult<GameDto?>(photoMetadata);
+        return gameDto;
     }
 
 

@@ -53,7 +53,7 @@ app.MapGet("api/v1/games/{id}/game", async (IGameService service, string id) =>
         return Results.NotFound();
     }
 
-    return Results.File(stream, "image/png");
+    return Results.File(stream, "application/octet-stream");
 });
 
 

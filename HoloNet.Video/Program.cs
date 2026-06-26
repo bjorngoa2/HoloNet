@@ -36,14 +36,14 @@ app.MapGet("api/v1/videos", async (IVideoService service) =>
 
 app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 {
-    var photoMetadata = await service.GetAsync(id);
+    var videoMetadata = await service.GetAsync(id);
 
-    if (photoMetadata is null)
+    if (videoMetadata is null)
     {
         return Results.NotFound();
     }
 
-    return Results.Ok(photoMetadata);
+    return Results.Ok(videoMetadata);
 });
 
 app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service) =>
