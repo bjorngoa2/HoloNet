@@ -30,7 +30,7 @@ app.MapGet("api/v1/photos", async (IPhotoService service) =>
     var result = await service.GetAllAsync();
     
     return Results.Ok(result);
-});
+}).WithName("GetPhotos");
 
 app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
 {
@@ -42,7 +42,7 @@ app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
     }
 
     return Results.Ok(photoMetadata);
-});
+}).WithName("GetPhoto");
 
 app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) =>
 {
@@ -54,7 +54,7 @@ app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) 
     }
 
     return Results.File(stream, "image/png");
-});
+}).WithName("GetPhotoImage");
 
 
 app.Run();

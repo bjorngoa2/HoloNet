@@ -32,7 +32,7 @@ app.MapGet("api/v1/videos", async (IVideoService service) =>
     var result = await service.GetAllAsync();
 
     return Results.Ok(result);
-});
+}).WithName("GetVideos");
 
 app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 {
@@ -44,7 +44,7 @@ app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
     }
 
     return Results.Ok(videoMetadata);
-});
+}).WithName("GetVideo");
 
 app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service) =>
 {
@@ -57,6 +57,6 @@ app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service)
 
     return Results.File(stream, "video/mp4", enableRangeProcessing: true);
     
-});
+}).WithName("GetVideoStream");
 
 app.Run();
