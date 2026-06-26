@@ -14,7 +14,7 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddHealthChecks();
 var app = builder.Build();
-app.MapHealthChecks("api/v1/health");   
+app.MapHealthChecks("api/v1/health").WithName("HealthCheck");
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -30,7 +30,7 @@ app.MapGet("api/v1/games", async (IGameService service) =>
     var result = await service.GetAllAsync();
     
     return Results.Ok(result);
-});
+}).WithName("GetGames");
 
 app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
 {
@@ -42,7 +42,7 @@ app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
     }
 
     return Results.Ok(photoMetadata);
-});
+}).WithName("GetGame");
 
 app.MapGet("api/v1/games/{id}/game", async (IGameService service, string id) =>
 {
@@ -54,7 +54,7 @@ app.MapGet("api/v1/games/{id}/game", async (IGameService service, string id) =>
     }
 
     return Results.File(stream, "application/octet-stream");
-});
+}).WithName("GetGameFile");
 
 
 app.Run();
