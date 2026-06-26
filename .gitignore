@@ -85,3 +85,8 @@ TestResults/
 
 # IDE folders
 .vs/
+
+# Service data directories (media files, game metadata — not committed)
+HoloNet.Video/data/
+HoloNet.Photos/data/
+HoloNet.Games/data/
