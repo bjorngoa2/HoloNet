@@ -1,7 +1,6 @@
-using System.Text;
 using HoloNet.Photos.Configuration;
 using HoloNet.Photos.Models;
-using Microsoft.AspNetCore.WebUtilities;
+using HoloNet.Shared.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace HoloNet.Photos.Services;
@@ -28,14 +27,11 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
         foreach (var filename in fileNames)
         {
             var fileInfo = new FileInfo(filename);
-            var fileSize = fileInfo.Length;
+            var urlSafeId = FileId.Encode(filename);
+            var imageUrl = $"{_photoServiceOptions.BaseUrl}/{urlSafeId}/image";
 
-            var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
-
-            var streamUrl = $"{_photoServiceOptions.BaseUrl}/{urlSafeId}/image";
-
-            PhotoDto photo = new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc, fileInfo.LastWriteTimeUtc, fileSize, streamUrl);
-            photos.Add(photo);
+            photos.Add(new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+                fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl));
         }
 
         return Task.FromResult<IEnumerable<PhotoDto>>(photos);
@@ -43,40 +39,32 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
 
     public Task<PhotoDto?> GetAsync(string id)
     {
-        var bytes = WebEncoders.Base64UrlDecode(id);
-        
-        
-        var filename = Encoding.UTF8.GetString(bytes);
-        
-        if (!File.Exists(filename))
-        {
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
             return Task.FromResult<PhotoDto?>(null);
-        }
 
-        var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
+        if (!File.Exists(filename))
+            return Task.FromResult<PhotoDto?>(null);
 
         var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_photoServiceOptions.BaseUrl}/{urlSafeId}/image";
+        var readUrl = $"{_photoServiceOptions.BaseUrl}/{FileId.Encode(filename)}/image";
 
-        var photoMetadata = new PhotoDto(id,fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc, fileInfo.LastWriteTimeUtc, fileInfo.Length, readUrl
-        );
+        var photoMetadata = new PhotoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+            fileInfo.LastWriteTimeUtc, fileInfo.Length, readUrl);
 
         return Task.FromResult<PhotoDto?>(photoMetadata);
     }
 
-
     public Task<Stream?> OpenReadAsync(string id)
     {
-        var filename = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(id));
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
+            return Task.FromResult<Stream?>(null);
 
         if (!File.Exists(filename))
             return Task.FromResult<Stream?>(null);
 
-        Stream stream = new FileStream(
-            filename,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read);
+        Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         return Task.FromResult<Stream?>(stream);
     }

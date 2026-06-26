@@ -1,7 +1,6 @@
-using System.Text;
+using HoloNet.Shared.Helpers;
 using HoloNet.Video.Configuration;
 using HoloNet.Video.Models;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
 namespace HoloNet.Video.Services;
@@ -24,21 +23,15 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         var videoFileNames = Directory.GetFiles(_videoServiceOptions.VideoPath)
             .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
-
         List<VideoDto> videos = [];
         foreach (var filename in videoFileNames)
         {
             var fileInfo = new FileInfo(filename);
-            var fileSize = fileInfo.Length;
-
-            var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
-
+            var urlSafeId = FileId.Encode(filename);
             var streamUrl = $"{_videoServiceOptions.BaseUrl}/{urlSafeId}/stream";
 
-            VideoDto video = new VideoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-                fileInfo.LastWriteTimeUtc, fileSize, streamUrl
-            );
-            videos.Add(video);
+            videos.Add(new VideoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+                fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl));
         }
 
         return Task.FromResult<IEnumerable<VideoDto>>(videos);
@@ -46,38 +39,32 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
 
     public Task<Stream?> GetStreamAsync(string id)
     {
-        var bytes = WebEncoders.Base64UrlDecode(id);
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
+            return Task.FromResult<Stream?>(null);
 
-        var filename = Encoding.UTF8.GetString(bytes);
-        
         if (!File.Exists(filename))
             return Task.FromResult<Stream?>(null);
 
         var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
-
 
         return Task.FromResult<Stream?>(stream);
     }
 
     public Task<VideoDto?> GetAsync(string id)
     {
-        var bytes = WebEncoders.Base64UrlDecode(id);
-        var filename = Encoding.UTF8.GetString(bytes);
-        
-        if (!File.Exists(filename))
-        {
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
             return Task.FromResult<VideoDto?>(null);
-        }
 
-        var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
-        
+        if (!File.Exists(filename))
+            return Task.FromResult<VideoDto?>(null);
 
         var fileInfo = new FileInfo(filename);
-        var streamUrl = $"{_videoServiceOptions.BaseUrl}/{urlSafeId}/stream";
+        var streamUrl = $"{_videoServiceOptions.BaseUrl}/{FileId.Encode(filename)}/stream";
 
         var metadata = new VideoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-            fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl
-        );
+            fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl);
 
         return Task.FromResult<VideoDto?>(metadata);
     }

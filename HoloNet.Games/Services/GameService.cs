@@ -1,8 +1,7 @@
-using System.Text;
 using System.Text.Json;
 using HoloNet.Games.Configuration;
 using HoloNet.Games.Models;
-using Microsoft.AspNetCore.WebUtilities;
+using HoloNet.Shared.Helpers;
 using Microsoft.Extensions.Options;
 
 namespace HoloNet.Games.Services;
@@ -18,6 +17,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 {
     private readonly GameServiceOptions _gameServiceOptions = options.Value;
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     public async Task<IEnumerable<GameDto>> GetAllAsync()
     {
         var files = Directory
@@ -28,14 +29,11 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         foreach (var filePath in files)
         {
             var fileInfo = new FileInfo(filePath);
-            var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filePath));
+            var urlSafeId = FileId.Encode(filePath);
             var readUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
 
             await using var stream = File.OpenRead(filePath);
-            var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, JsonOptions);
 
             if (metadata is null) continue;
 
@@ -55,28 +53,23 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 
     public async Task<GameDto?> GetAsync(string id)
     {
-        var bytes = WebEncoders.Base64UrlDecode(id);
-        var filename = Encoding.UTF8.GetString(bytes);
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
+            return null;
 
         if (!File.Exists(filename))
-        {
             return null;
-        }
 
-        var urlSafeId = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(filename));
         var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_gameServiceOptions.BaseUrl}/{urlSafeId}/game";
+        var readUrl = $"{_gameServiceOptions.BaseUrl}/{FileId.Encode(filename)}/game";
 
         await using var fileStream = File.OpenRead(filename);
-        var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, JsonOptions);
 
         if (metadata is null)
             return null;
 
-        var gameDto = new GameDto(
+        return new GameDto(
             id,
             metadata.Title,
             metadata.Platform,
@@ -85,25 +78,19 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             fileInfo.Length,
             readUrl
         );
-
-        return gameDto;
     }
-
 
     public Task<Stream?> OpenReadAsync(string id)
     {
-        var filename = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(id));
+        var filename = FileId.TryDecode(id);
+        if (filename is null)
+            return Task.FromResult<Stream?>(null);
 
         if (!File.Exists(filename))
             return Task.FromResult<Stream?>(null);
 
-        Stream stream = new FileStream(
-            filename,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read);
+        Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         return Task.FromResult<Stream?>(stream);
     }
 }
-
