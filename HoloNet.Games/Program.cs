@@ -7,21 +7,23 @@ builder.Services.Configure<GameServiceOptions>(builder.Configuration.GetSection(
 
 builder.Services.AddScoped<IGameService, GameService>();
 
-
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-
 builder.Services.AddHealthChecks();
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
 var app = builder.Build();
+
 app.MapHealthChecks("api/v1/health").WithName("HealthCheck");
-// Configure the HTTP request pipeline.
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
 
 
 // Endpoints

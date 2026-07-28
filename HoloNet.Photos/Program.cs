@@ -7,21 +7,23 @@ builder.Services.Configure<PhotoServiceOptions>(builder.Configuration.GetSection
 
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 
-
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-
 builder.Services.AddHealthChecks();
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
+
 var app = builder.Build();
-app.MapHealthChecks("api/v1/health");   
-// Configure the HTTP request pipeline.
+
+app.MapHealthChecks("api/v1/health");
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+app.UseCors();
 
 
 // Endpoints
