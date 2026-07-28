@@ -55,7 +55,17 @@ app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) 
         return Results.NotFound();
     }
 
-    return Results.File(stream, "image/png");
+    var photo = await service.GetAsync(id);
+    var contentType = photo?.Extension.ToLowerInvariant() switch
+    {
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".webp" => "image/webp",
+        _ => "application/octet-stream"
+    };
+
+    return Results.File(stream, contentType);
 }).WithName("GetPhotoImage");
 
 

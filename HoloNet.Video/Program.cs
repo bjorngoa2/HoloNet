@@ -55,7 +55,17 @@ app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service)
         return Results.NotFound();
     }
 
-    return Results.File(stream, "video/mp4", enableRangeProcessing: true);
+    var video = await service.GetAsync(id);
+    var contentType = video?.Extension.ToLowerInvariant() switch
+    {
+        ".mp4" => "video/mp4",
+        ".mkv" => "video/x-matroska",
+        ".avi" => "video/x-msvideo",
+        ".mov" => "video/quicktime",
+        _ => "application/octet-stream"
+    };
+
+    return Results.File(stream, contentType, enableRangeProcessing: true);
     
 }).WithName("GetVideoStream");
 

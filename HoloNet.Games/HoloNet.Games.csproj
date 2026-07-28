@@ -7,11 +7,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8"/>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\HoloNet.Shared\HoloNet.Shared.csproj"/>
+        <ProjectReference Include="..\HoloNet.Shared\HoloNet.Shared.csproj" />
     </ItemGroup>
 
 </Project>
