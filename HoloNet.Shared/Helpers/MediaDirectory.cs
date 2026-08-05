@@ -39,7 +39,10 @@ public sealed class MediaDirectory
 
         try
         {
-            var root = System.IO.Path.GetFullPath(Path) + System.IO.Path.DirectorySeparatorChar;
+            // TrimEnd guards against double separators when the configured path already ends
+            // with a trailing slash (e.g. "data/"), which would otherwise make every candidate fail.
+            var root = System.IO.Path.GetFullPath(Path).TrimEnd(System.IO.Path.DirectorySeparatorChar,
+                System.IO.Path.AltDirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
             var candidate = System.IO.Path.GetFullPath(candidateFullPath);
             return candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase);
         }

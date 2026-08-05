@@ -34,9 +34,9 @@ app.UseCors();
 
 
 // Endpoints
-app.MapGet("api/v1/games", async (IGameService service) =>
+app.MapGet("api/v1/games", async (IGameService service, string? platform, int? year, string? genre) =>
 {
-    var result = await service.GetAllAsync();
+    var result = await service.GetAllAsync(platform, year, genre);
     
     return Results.Ok(result);
 }).WithName("GetGames");
@@ -55,6 +55,24 @@ app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
 
     return Results.Ok(game);
 }).WithName("GetGame");
+
+app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =>
+{
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
+
+    var game = await service.GetAsync(id);
+    if (game is null)
+        return Results.NotFound();
+
+    var launchIntent = await service.GetLaunchIntentAsync(id);
+    if (launchIntent is null)
+        return Results.Problem(
+            "No network share path is configured for this game, so it cannot be launched remotely.",
+            statusCode: StatusCodes.Status409Conflict);
+
+    return Results.Ok(launchIntent);
+}).WithName("LaunchGame");
 
 
 app.Run();

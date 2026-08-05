@@ -1,6 +1,26 @@
 @HoloNet.Games_HostAddress = http://localhost:5071
 
-GET {{HoloNet.Games_HostAddress}}/weatherforecast/
+GET {{HoloNet.Games_HostAddress}}/api/v1/health
+Accept: application/json
+
+###
+
+GET {{HoloNet.Games_HostAddress}}/api/v1/games
+Accept: application/json
+
+###
+
+GET {{HoloNet.Games_HostAddress}}/api/v1/games?platform=PS2&year=2002&genre=Action
+Accept: application/json
+
+###
+
+GET {{HoloNet.Games_HostAddress}}/api/v1/games/{{id}}
+Accept: application/json
+
+###
+
+GET {{HoloNet.Games_HostAddress}}/api/v1/games/{{id}}/launch
 Accept: application/json
 
 ###

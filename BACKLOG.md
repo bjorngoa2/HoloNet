@@ -15,43 +15,43 @@
 
 ## 🔴 P1 — Critical (must-have before services are usable)
 
-- [ ] **`cors-all`** — Add CORS middleware to all 3 services
+- [x] **`cors-all`** — Add CORS middleware to all 3 services
   - Browser will block portal → service API calls without this
-- [ ] **`photos-content-type`** — Fix Photos content-type (hardcoded `image/png` for all images)
+- [x] **`photos-content-type`** — Fix Photos content-type (hardcoded `image/png` for all images)
   - JPEGs/WebPs render broken in browsers
-- [ ] **`portal-dashboard`** — React + TypeScript (Vite) SPA in `HoloNet.Portal/ClientApp/`; builds to `wwwroot/`; served via `UseStaticFiles()`; service cards for Videos, Photos, Games
-- [ ] **`docker-all`** — Write Dockerfiles + `docker-compose.yml` for all services + Nginx
+- [x] **`portal-dashboard`** — React + TypeScript (Vite) SPA in `HoloNet.Portal/ClientApp/`; builds to `wwwroot/`; served via `UseStaticFiles()`; service cards for Videos, Photos, Games
+- [x] **`docker-all`** — Write Dockerfiles + `docker-compose.yml` for all services + Nginx
   - Nothing runs on the server without this
 
 ---
 
 ## 🟡 P2 — High (correctness & maintainability)
 
-- [ ] **`async-io`** — Make file I/O truly async in Video & Photos services
-  - `Task.FromResult(Directory.EnumerateFiles(...))` is sync-wrapped — blocks a thread under load
-- [ ] **`problem-details`** — Return `ProblemDetails` on errors (RFC 7807)
-  - Replace bare `Results.NotFound()` with consistent, machine-readable error responses
-- [ ] **`input-validation`** — Validate `id` params early in all endpoints
-  - Prevents garbage input reaching file I/O
-- [ ] **`health-checks-real`** — Make health checks verify the data directory is accessible
-  - Currently always returns OK even if the data volume is unmounted
-- [ ] **`nginx-config`** — Write Nginx reverse proxy config routing `*.goa.no` to containers
-  - Required for LAN subdomain routing
+- [x] **`async-io`** — Make file I/O truly async in Video & Photos services
+  - Directory scans offloaded to `Task.Run` background threads so they don't block request threads
+- [x] **`problem-details`** — Return `ProblemDetails` on errors (RFC 7807)
+  - `AddProblemDetails()` + `UseExceptionHandler()`/`UseStatusCodePages()` + `Results.Problem(...)` on bad input
+- [x] **`input-validation`** — Validate `id` params early in all endpoints
+  - All `{id}` endpoints check `string.IsNullOrWhiteSpace(id)` before hitting file I/O
+- [x] **`health-checks-real`** — Make health checks verify the data directory is accessible
+  - `MediaDirectoryHealthCheck` (shared) checks existence/readability of the configured media path
+- [x] **`nginx-config`** — Write Nginx reverse proxy config routing `*.goa.no` to containers
+  - `nginx/nginx.conf` routes portal/videos/photos/games subdomains, with range-friendly settings for video
 
 ---
 
 ## 🟢 P3 — Medium (feature completeness)
 
-- [ ] **`games-launch-endpoint`** — Add `GET api/v1/games/{id}/launch` — returns launch-intent for TV PC
+- [x] **`games-launch-endpoint`** — Add `GET api/v1/games/{id}/launch` — returns launch-intent for TV PC
   - Core feature from PLAN.md — lets the TV PC know which game to open in the emulator
-- [ ] **`games-search-filter`** — Add query params to `GET api/v1/games` (platform, year, genre)
+- [x] **`games-search-filter`** — Add query params to `GET api/v1/games` (platform, year, genre)
   - Useful once the game library grows
-- [ ] **`video-content-type`** — Detect MIME type per extension in Video stream
-  - Currently hardcodes `video/mp4` regardless of actual format (.mkv, .avi, .mov)
-- [ ] **`games-file-size`** — Add `FileSizeBytes` to `GameDto`
+- [x] **`video-content-type`** — Detect MIME type per extension in Video stream
+  - Maps `.mp4`/`.mkv`/`.avi`/`.mov` to correct content-type, falls back to `application/octet-stream`
+- [x] **`games-file-size`** — Add `FileSizeBytes` to `GameDto`
   - Parity with Video/Photos DTOs
-- [ ] **`photos-health-check`** — Add `AddHealthChecks()` + `MapHealthChecks()` to Photos service
-  - Photos is the only service missing it
+- [x] **`photos-health-check`** — Add `AddHealthChecks()` + `MapHealthChecks()` to Photos service
+  - Photos now has `MediaDirectoryHealthCheck` wired up like Video/Games
 
 ---
 

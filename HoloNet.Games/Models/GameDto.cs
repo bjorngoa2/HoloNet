@@ -7,5 +7,6 @@ public record GameDto(
     string? Description,
     int? Year,
     string[]? Genre,
-    string? NetworkPath
+    string? NetworkPath,
+    long? FileSizeBytes
 );

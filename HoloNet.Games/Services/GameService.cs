@@ -8,8 +8,9 @@ namespace HoloNet.Games.Services;
 
 public interface IGameService
 {
-    Task<IEnumerable<GameDto>> GetAllAsync();
+    Task<IEnumerable<GameDto>> GetAllAsync(string? platform = null, int? year = null, string? genre = null);
     Task<GameDto?> GetAsync(string id);
+    Task<LaunchIntentDto?> GetLaunchIntentAsync(string id);
 }
 
 public class GameService(IOptions<GameServiceOptions> options) : IGameService
@@ -18,7 +19,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public async Task<IEnumerable<GameDto>> GetAllAsync()
+    public async Task<IEnumerable<GameDto>> GetAllAsync(string? platform = null, int? year = null, string? genre = null)
     {
         var directory = _gameServiceOptions.GetGameDirectory();
 
@@ -40,7 +41,17 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
 
             if (metadata is null) continue;
 
-            var networkPath = FindGameFileNetworkPath(filePath);
+            if (platform is not null && !string.Equals(metadata.Platform, platform, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (year is not null && metadata.Year != year)
+                continue;
+
+            if (genre is not null &&
+                (metadata.Genre is null || !metadata.Genre.Any(g => string.Equals(g, genre, StringComparison.OrdinalIgnoreCase))))
+                continue;
+
+            var gameFile = FindGameFile(filePath);
 
             games.Add(new GameDto(
                 urlSafeId,
@@ -49,7 +60,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
                 metadata.Description,
                 metadata.Year,
                 metadata.Genre,
-                networkPath
+                gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile),
+                gameFile is null ? null : new FileInfo(gameFile).Length
             ));
         }
 
@@ -72,6 +84,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         if (metadata is null)
             return null;
 
+        var gameFile = FindGameFile(filename);
+
         return new GameDto(
             id,
             metadata.Title,
@@ -79,24 +93,30 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             metadata.Description,
             metadata.Year,
             metadata.Genre,
-            FindGameFileNetworkPath(filename)
+            gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile),
+            gameFile is null ? null : new FileInfo(gameFile).Length
         );
     }
 
+    public async Task<LaunchIntentDto?> GetLaunchIntentAsync(string id)
+    {
+        var game = await GetAsync(id);
+        if (game is null || game.NetworkPath is null)
+            return null;
+
+        return new LaunchIntentDto(game.Id, game.Title, game.Platform, game.NetworkPath);
+    }
+
     /// <summary>
-    /// Finds the game file (ISO/CHD/etc.) sitting alongside a metadata.json sidecar and maps it to a
-    /// UNC path under the configured network share, so emulators can open it directly instead of
-    /// downloading it through the API.
+    /// Finds the game file (ISO/CHD/etc.) sitting alongside a metadata.json sidecar.
     /// </summary>
-    private string? FindGameFileNetworkPath(string metadataFilePath)
+    private static string? FindGameFile(string metadataFilePath)
     {
         var directory = Path.GetDirectoryName(metadataFilePath);
         if (directory is null)
             return null;
 
-        var gameFile = Directory.EnumerateFiles(directory)
+        return Directory.EnumerateFiles(directory)
             .FirstOrDefault(x => !string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
-
-        return gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile);
     }
 }
