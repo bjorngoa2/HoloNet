@@ -23,27 +23,32 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
         var directory = _photoServiceOptions.GetPhotoDirectory();
         var baseUrl = _photoServiceOptions.GetBaseUrl();
 
-        var fileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
-            .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
-
-        List<PhotoDto> photos = [];
-        foreach (var filename in fileNames)
+        // Directory.EnumerateFiles has no async equivalent; offload the (potentially slow,
+        // e.g. network share) scan to a background thread so it doesn't block the request thread.
+        return Task.Run<IEnumerable<PhotoDto>>(() =>
         {
-            var fileInfo = new FileInfo(filename);
-            var urlSafeId = FileId.Encode(filename);
-            var imageUrl = $"{baseUrl}/{urlSafeId}/image";
+            var fileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
+                .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
-            photos.Add(new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-                fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl));
-        }
+            List<PhotoDto> photos = [];
+            foreach (var filename in fileNames)
+            {
+                var fileInfo = new FileInfo(filename);
+                var urlSafeId = FileId.Encode(filename);
+                var imageUrl = $"{baseUrl}/{urlSafeId}/image";
 
-        return Task.FromResult<IEnumerable<PhotoDto>>(photos);
+                photos.Add(new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+                    fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl));
+            }
+
+            return photos;
+        });
     }
 
     public Task<PhotoDto?> GetAsync(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null)
+        if (filename is null || !_photoServiceOptions.GetPhotoDirectory().Contains(filename))
             return Task.FromResult<PhotoDto?>(null);
 
         if (!File.Exists(filename))
@@ -61,13 +66,14 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
     public Task<Stream?> OpenReadAsync(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null)
+        if (filename is null || !_photoServiceOptions.GetPhotoDirectory().Contains(filename))
             return Task.FromResult<Stream?>(null);
 
         if (!File.Exists(filename))
             return Task.FromResult<Stream?>(null);
 
-        Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, useAsync: true);
 
         return Task.FromResult<Stream?>(stream);
     }
