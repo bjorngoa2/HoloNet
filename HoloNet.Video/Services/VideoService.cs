@@ -23,33 +23,39 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         var directory = _videoServiceOptions.GetVideoDirectory();
         var baseUrl = _videoServiceOptions.GetBaseUrl();
 
-        var videoFileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
-            .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
-
-        List<VideoDto> videos = [];
-        foreach (var filename in videoFileNames)
+        // Directory.EnumerateFiles has no async equivalent; offload the (potentially slow,
+        // e.g. network share) scan to a background thread so it doesn't block the request thread.
+        return Task.Run<IEnumerable<VideoDto>>(() =>
         {
-            var fileInfo = new FileInfo(filename);
-            var urlSafeId = FileId.Encode(filename);
-            var streamUrl = $"{baseUrl}/{urlSafeId}/stream";
+            var videoFileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
+                .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
 
-            videos.Add(new VideoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-                fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl));
-        }
+            List<VideoDto> videos = [];
+            foreach (var filename in videoFileNames)
+            {
+                var fileInfo = new FileInfo(filename);
+                var urlSafeId = FileId.Encode(filename);
+                var streamUrl = $"{baseUrl}/{urlSafeId}/stream";
 
-        return Task.FromResult<IEnumerable<VideoDto>>(videos);
+                videos.Add(new VideoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+                    fileInfo.LastWriteTimeUtc, fileInfo.Length, streamUrl));
+            }
+
+            return videos;
+        });
     }
 
     public Task<Stream?> GetStreamAsync(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null)
+        if (filename is null || !_videoServiceOptions.GetVideoDirectory().Contains(filename))
             return Task.FromResult<Stream?>(null);
 
         if (!File.Exists(filename))
             return Task.FromResult<Stream?>(null);
 
-        var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, useAsync: true);
 
         return Task.FromResult<Stream?>(stream);
     }
@@ -57,7 +63,7 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
     public Task<VideoDto?> GetAsync(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null)
+        if (filename is null || !_videoServiceOptions.GetVideoDirectory().Contains(filename))
             return Task.FromResult<VideoDto?>(null);
 
         if (!File.Exists(filename))
