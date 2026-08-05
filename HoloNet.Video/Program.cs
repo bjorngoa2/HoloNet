@@ -1,3 +1,4 @@
+using HoloNet.Shared.HealthChecks;
 using HoloNet.Video.Configuration;
 using HoloNet.Video.Services;
 
@@ -8,12 +9,18 @@ builder.Services.Configure<VideoServiceOptions>(builder.Configuration.GetSection
 builder.Services.AddScoped<IVideoService, VideoService>();
 
 builder.Services.AddOpenApi();
-builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks()
+    .AddCheck("media_directory", new MediaDirectoryHealthCheck(
+        builder.Configuration["VideoService:VideoPath"] ?? string.Empty));
 builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 app.MapHealthChecks("api/v1/health");
 
@@ -36,6 +43,9 @@ app.MapGet("api/v1/videos", async (IVideoService service) =>
 
 app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 {
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Video id is required.", statusCode: StatusCodes.Status400BadRequest);
+
     var videoMetadata = await service.GetAsync(id);
 
     if (videoMetadata is null)
@@ -48,6 +58,9 @@ app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 
 app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service) =>
 {
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Video id is required.", statusCode: StatusCodes.Status400BadRequest);
+
     var stream = await service.GetStreamAsync(id);
 
     if (stream == null)

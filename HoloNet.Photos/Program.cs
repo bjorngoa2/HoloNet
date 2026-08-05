@@ -1,5 +1,6 @@
 using HoloNet.Photos.Configuration;
 using HoloNet.Photos.Services;
+using HoloNet.Shared.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,12 +9,18 @@ builder.Services.Configure<PhotoServiceOptions>(builder.Configuration.GetSection
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 
 builder.Services.AddOpenApi();
-builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks()
+    .AddCheck("media_directory", new MediaDirectoryHealthCheck(
+        builder.Configuration["PhotoService:PhotoPath"] ?? string.Empty));
 builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 app.MapHealthChecks("api/v1/health");
 
@@ -36,6 +43,9 @@ app.MapGet("api/v1/photos", async (IPhotoService service) =>
 
 app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
 {
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest);
+
     var photoMetadata = await service.GetAsync(id);
 
     if (photoMetadata is null)
@@ -48,6 +58,9 @@ app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
 
 app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) =>
 {
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest);
+
     var stream = await service.OpenReadAsync(id);
 
     if (stream is null)

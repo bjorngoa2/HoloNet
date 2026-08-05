@@ -1,5 +1,6 @@
 using HoloNet.Games.Configuration;
 using HoloNet.Games.Services;
+using HoloNet.Shared.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,12 +9,18 @@ builder.Services.Configure<GameServiceOptions>(builder.Configuration.GetSection(
 builder.Services.AddScoped<IGameService, GameService>();
 
 builder.Services.AddOpenApi();
-builder.Services.AddHealthChecks();
+builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks()
+    .AddCheck("media_directory", new MediaDirectoryHealthCheck(
+        builder.Configuration["GameService:GamePath"] ?? string.Empty));
 builder.Services.AddCors(options =>
     options.AddDefaultPolicy(policy =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 app.MapHealthChecks("api/v1/health").WithName("HealthCheck");
 
@@ -36,6 +43,9 @@ app.MapGet("api/v1/games", async (IGameService service) =>
 
 app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
 {
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
+
     var game = await service.GetAsync(id);
 
     if (game is null)
