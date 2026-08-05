@@ -28,5 +28,26 @@ public sealed class MediaDirectory
         return new MediaDirectory(path);
     }
 
+    /// <summary>
+    /// Checks whether <paramref name="candidateFullPath"/> resolves to a location inside this directory.
+    /// Guards against path traversal when a caller-supplied (decoded) file path is used to access disk.
+    /// </summary>
+    public bool Contains(string? candidateFullPath)
+    {
+        if (string.IsNullOrWhiteSpace(candidateFullPath))
+            return false;
+
+        try
+        {
+            var root = System.IO.Path.GetFullPath(Path) + System.IO.Path.DirectorySeparatorChar;
+            var candidate = System.IO.Path.GetFullPath(candidateFullPath);
+            return candidate.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public override string ToString() => Path;
 }
