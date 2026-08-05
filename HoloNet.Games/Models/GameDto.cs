@@ -6,5 +6,6 @@ public record GameDto(
     string Platform,
     string? Description,
     int? Year,
-    string[]? Genre
+    string[]? Genre,
+    string? NetworkPath
 );

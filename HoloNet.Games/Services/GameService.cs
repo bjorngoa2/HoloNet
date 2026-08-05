@@ -22,19 +22,25 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
     {
         var directory = _gameServiceOptions.GetGameDirectory();
 
-        var files = Directory
+        // Directory.EnumerateFiles has no async equivalent; offload the (potentially slow,
+        // e.g. network share) scan to a background thread so it doesn't block the request thread.
+        var files = await Task.Run(() => Directory
             .EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
-            .Where(x => string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
+            .Where(x => string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase))
+            .ToList());
 
         List<GameDto> games = [];
         foreach (var filePath in files)
         {
             var urlSafeId = FileId.Encode(filePath);
 
-            await using var stream = File.OpenRead(filePath);
+            await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 4096, useAsync: true);
             var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(stream, JsonOptions);
 
             if (metadata is null) continue;
+
+            var networkPath = FindGameFileNetworkPath(filePath);
 
             games.Add(new GameDto(
                 urlSafeId,
@@ -42,7 +48,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
                 metadata.Platform,
                 metadata.Description,
                 metadata.Year,
-                metadata.Genre
+                metadata.Genre,
+                networkPath
             ));
         }
 
@@ -52,13 +59,14 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
     public async Task<GameDto?> GetAsync(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null)
+        if (filename is null || !_gameServiceOptions.GetGameDirectory().Contains(filename))
             return null;
 
         if (!File.Exists(filename))
             return null;
 
-        await using var fileStream = File.OpenRead(filename);
+        await using var fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, useAsync: true);
         var metadata = await JsonSerializer.DeserializeAsync<GameMetadata>(fileStream, JsonOptions);
 
         if (metadata is null)
@@ -70,7 +78,25 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             metadata.Platform,
             metadata.Description,
             metadata.Year,
-            metadata.Genre
+            metadata.Genre,
+            FindGameFileNetworkPath(filename)
         );
+    }
+
+    /// <summary>
+    /// Finds the game file (ISO/CHD/etc.) sitting alongside a metadata.json sidecar and maps it to a
+    /// UNC path under the configured network share, so emulators can open it directly instead of
+    /// downloading it through the API.
+    /// </summary>
+    private string? FindGameFileNetworkPath(string metadataFilePath)
+    {
+        var directory = Path.GetDirectoryName(metadataFilePath);
+        if (directory is null)
+            return null;
+
+        var gameFile = Directory.EnumerateFiles(directory)
+            .FirstOrDefault(x => !string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
+
+        return gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile);
     }
 }
