@@ -1,0 +1,77 @@
+name: holonet
+
+services:
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - holonet-portal
+      - holonet-video
+      - holonet-photos
+      - holonet-games
+    networks:
+      - holonet
+    restart: unless-stopped
+
+  holonet-portal:
+    build:
+      context: .
+      dockerfile: HoloNet.Portal/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Portal__VideoUrl=http://videos.goa.no
+      - Portal__PhotosUrl=http://photos.goa.no
+      - Portal__GamesUrl=http://games.goa.no
+    networks:
+      - holonet
+    restart: unless-stopped
+
+  holonet-video:
+    build:
+      context: .
+      dockerfile: HoloNet.Video/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - VideoService__VideoPath=/data/videos
+      - VideoService__BaseUrl=http://videos.goa.no/api/v1/videos
+    volumes:
+      - ./data/videos:/data/videos:ro
+    networks:
+      - holonet
+    restart: unless-stopped
+
+  holonet-photos:
+    build:
+      context: .
+      dockerfile: HoloNet.Photos/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - PhotoService__PhotoPath=/data/photos
+      - PhotoService__BaseUrl=http://photos.goa.no/api/v1/photos
+    volumes:
+      - ./data/photos:/data/photos:ro
+    networks:
+      - holonet
+    restart: unless-stopped
+
+  holonet-games:
+    build:
+      context: .
+      dockerfile: HoloNet.Games/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - GameService__GamePath=/data/games
+      - GameService__BaseUrl=http://games.goa.no/api/v1/games
+    volumes:
+      - ./data/games:/data/games:ro
+    networks:
+      - holonet
+    restart: unless-stopped
+
+networks:
+  holonet:
+    driver: bridge
