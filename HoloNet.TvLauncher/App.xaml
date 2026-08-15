@@ -1,0 +1,11 @@
+<Application x:Class="HoloNet.TvLauncher.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <SolidColorBrush x:Key="BackgroundBrush" Color="#0D0D12" />
+        <SolidColorBrush x:Key="CardBrush" Color="#1C1C24" />
+        <SolidColorBrush x:Key="CardSelectedBrush" Color="#3D6BFF" />
+        <SolidColorBrush x:Key="TextBrush" Color="#F2F2F5" />
+        <SolidColorBrush x:Key="SubTextBrush" Color="#9A9AA5" />
+    </Application.Resources>
+</Application>
