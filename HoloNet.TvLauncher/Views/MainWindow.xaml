@@ -77,6 +77,11 @@
         <TextBlock x:Name="StatusText" Grid.Row="2" Foreground="{StaticResource SubTextBrush}"
                    FontSize="14" Margin="32,8,32,16" TextWrapping="Wrap" />
 
+        <TextBlock x:Name="SaveInfoText" Grid.Row="1" Foreground="{StaticResource TextBrush}"
+                   FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Right"
+                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,12"
+                   Background="#AA0D0D12" Padding="12,8" Visibility="Collapsed" />
+
         <!-- Full-screen overlay shown while an emulator has focus / during load / on error. -->
         <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#DD0D0D12" Visibility="Collapsed">
             <TextBlock x:Name="OverlayText" Foreground="{StaticResource TextBrush}" FontSize="28"

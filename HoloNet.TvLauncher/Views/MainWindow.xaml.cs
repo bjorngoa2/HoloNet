@@ -14,18 +14,24 @@ public partial class MainWindow : Window
     private readonly IGamesApiClient _gamesApiClient;
     private readonly IGameLauncher _gameLauncher;
     private readonly IGamepadService _gamepadService;
+    private readonly ISaveStatsService _saveStatsService;
 
     private readonly List<GameCardViewModel> _cards = [];
     private int _selectedIndex;
     private bool _isBusy;
 
-    public MainWindow(IGamesApiClient gamesApiClient, IGameLauncher gameLauncher, IGamepadService gamepadService)
+    public MainWindow(
+        IGamesApiClient gamesApiClient,
+        IGameLauncher gameLauncher,
+        IGamepadService gamepadService,
+        ISaveStatsService saveStatsService)
     {
         InitializeComponent();
 
         _gamesApiClient = gamesApiClient;
         _gameLauncher = gameLauncher;
         _gamepadService = gamepadService;
+        _saveStatsService = saveStatsService;
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
         Loaded += async (_, _) =>
@@ -49,7 +55,7 @@ public partial class MainWindow : Window
         {
             var games = await _gamesApiClient.GetGamesAsync();
             _cards.Clear();
-            _cards.AddRange(games.Select(g => new GameCardViewModel(g)));
+            _cards.AddRange(games.Select(g => new GameCardViewModel(g, _saveStatsService.GetStats(g.Title))));
             GamesItemsControl.ItemsSource = _cards;
 
             _selectedIndex = _cards.Count > 0 ? 0 : -1;
@@ -70,6 +76,22 @@ public partial class MainWindow : Window
     {
         for (var i = 0; i < _cards.Count; i++)
             _cards[i].IsSelected = i == _selectedIndex;
+
+        UpdateSaveInfo();
+    }
+
+    private void UpdateSaveInfo()
+    {
+        var selected = _selectedIndex >= 0 && _selectedIndex < _cards.Count ? _cards[_selectedIndex] : null;
+        if (selected is not null && selected.HasSaveStats)
+        {
+            SaveInfoText.Text = $"{selected.Title}\n{selected.SaveStatsText}";
+            SaveInfoText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SaveInfoText.Visibility = Visibility.Collapsed;
+        }
     }
 
     private int ColumnsPerRow()
