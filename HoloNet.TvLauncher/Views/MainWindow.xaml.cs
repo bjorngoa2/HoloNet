@@ -205,6 +205,12 @@ public partial class MainWindow : Window
                 ShowOverlay($"Couldn't launch \"{game.Title}\":\n{result.ErrorMessage}\n\nPress A to dismiss.");
                 await WaitForDismissAsync();
             }
+
+            // The save file is only updated once the emulator process has actually exited, so
+            // refresh this card's stats now (rather than the stale copy fetched at library load)
+            // and refresh the on-screen panel if this card is still the selected one.
+            _cards[_selectedIndex].SaveStats = _saveStatsService.GetStats(game.Title);
+            UpdateSaveInfo();
         }
         finally
         {

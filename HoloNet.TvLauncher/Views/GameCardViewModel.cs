@@ -11,9 +11,21 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
 {
     private bool _isSelected;
 
+    private SaveStats? _saveStats = saveStats;
+
     public GameDto Game { get; } = game;
 
-    public SaveStats? SaveStats { get; } = saveStats;
+    public SaveStats? SaveStats
+    {
+        get => _saveStats;
+        set
+        {
+            _saveStats = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SaveStatsText));
+            OnPropertyChanged(nameof(HasSaveStats));
+        }
+    }
 
     public string Title => Game.Title;
 
