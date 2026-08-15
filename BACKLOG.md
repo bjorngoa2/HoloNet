@@ -52,6 +52,32 @@
   - Parity with Video/Photos DTOs
 - [x] **`photos-health-check`** — Add `AddHealthChecks()` + `MapHealthChecks()` to Photos service
   - Photos now has `MediaDirectoryHealthCheck` wired up like Video/Games
+- [x] **`tv-pc-launcher-client`** — Build the missing "TV PC" client that actually invokes the emulator
+  - Built `HoloNet.TvLauncher`, a fullscreen WPF picker. Fetches `GET api/v1/games`, browses
+    via gamepad (XInput for Xbox pads, SharpDX.DirectInput fallback for PS4/PS5/other HID
+    pads — no extra drivers) or keyboard, and on select calls `GET api/v1/games/{id}/launch`
+    then shells out to the emulator mapped to that platform in `appsettings.json`, passing
+    the network path.
+  - Verified end-to-end on real hardware: navigated and launched Ratchet & Clank in PCSX2
+    using a DualSense controller over Bluetooth.
+  - Cover art and multi-controller support are not yet implemented — see
+    `HoloNet.TvLauncher/README.md` for details and deployment/auto-start instructions.
+  - `HoloNet.Games` only returns launch-intent (title/platform/`networkPath`) — nothing on the TV PC
+    consumed it before this. Manually verified end-to-end with PCSX2 via an ad-hoc PowerShell snippet
+    (`Invoke-RestMethod .../launch` → `Start-Process pcsx2-qt.exe -fastboot -- "<networkPath>"`),
+    but that wasn't a real client.
+  - **Alternatives considered:**
+    - ~~**Script-based (fastest)** — a PowerShell or Python script with a simple text/TUI game picker
+      that calls the API and launches the emulator. Minimal effort, easy to iterate, but no
+      polished UI and needs to be manually kept running/updated on the TV PC.~~
+    - **Small desktop app (WPF/Avalonia)** — a proper game-picker UI with cover art, "Play" button,
+      auto-starts on TV PC boot ("console mode" per PLAN.md). More work, but matches the
+      "living room console" experience PLAN.md envisions long-term. **Chosen approach** —
+      implemented as `HoloNet.TvLauncher` (WPF).
+    - ~~**Portal-triggered + local helper service** — Portal web UI gets a "Play" button that calls
+      `/launch`; a tiny always-running helper/listener on the TV PC (background service or tray
+      app) receives the request (e.g. via a small HTTP endpoint of its own, or polling) and invokes
+      PCSX2. Lets you browse/launch from any device on the LAN, not just from the TV PC itself.~~
 
 ---
 
