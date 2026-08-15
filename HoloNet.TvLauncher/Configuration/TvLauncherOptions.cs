@@ -65,4 +65,13 @@ public class EmulatorMapping
     /// game's network share path before launching.
     /// </summary>
     public string ArgumentsTemplate { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When <c>true</c>, the quit combo kills this emulator's process immediately instead of
+    /// requesting a graceful close. Intended for emulators launched hidden (e.g. PCSX2's
+    /// <c>-nogui</c>), where a graceful close would otherwise pop up a visible confirmation
+    /// dialog that the player can't interact with on the hidden window. Defaults to
+    /// <c>false</c> (graceful close, so a visible emulator can show its own prompts).
+    /// </summary>
+    public bool ForceKillOnQuit { get; set; }
 }
