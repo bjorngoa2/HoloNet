@@ -56,7 +56,7 @@ public partial class MainWindow : Window
             UpdateSelection();
             SetStatus(_cards.Count == 0
                 ? "No games found. Press Start to refresh."
-                : "D-pad/stick: move · A: play · Start: refresh");
+                : "D-pad/stick: move · A: play · Start: refresh · Hold Back+Start while playing: quit");
         }
         catch (Exception ex)
         {
@@ -92,6 +92,7 @@ public partial class MainWindow : Window
             Key.Enter => GamepadButton.Confirm,
             Key.Escape => GamepadButton.Cancel,
             Key.F5 => GamepadButton.Refresh,
+            Key.Q => GamepadButton.Quit,
             _ => (GamepadButton?)null
         };
 
@@ -105,6 +106,9 @@ public partial class MainWindow : Window
         {
             if (button is GamepadButton.Confirm or GamepadButton.Cancel && _dismissWait is not null)
                 _dismissWait.TrySetResult();
+
+            if (button == GamepadButton.Quit)
+                await _gameLauncher.QuitCurrentGameAsync();
 
             return;
         }

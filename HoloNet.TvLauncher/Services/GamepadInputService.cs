@@ -13,7 +13,8 @@ public enum GamepadButton
     Right,
     Confirm,
     Cancel,
-    Refresh
+    Refresh,
+    Quit
 }
 
 public interface IGamepadService : IDisposable
@@ -47,6 +48,12 @@ public interface IGamepadService : IDisposable
 /// matching the common PS4/PS5 DirectInput HID report layout) and are configurable via
 /// <see cref="TvLauncherOptions.DirectInputButtonMappings"/> in case a different pad numbers
 /// them differently.
+///
+/// Also detects a "quit current game" combo — Back+Start (XInput) / Share+Options
+/// (DirectInput) held together for <see cref="TvLauncherOptions.QuitHoldMilliseconds"/> —
+/// raised as <see cref="GamepadButton.Quit"/>. This keeps working even while another
+/// application (the emulator) has window focus, since XInput polling is global and the
+/// DirectInput device is acquired in background/non-exclusive mode.
 /// </summary>
 public sealed class GamepadInputService : IGamepadService
 {
@@ -114,6 +121,39 @@ public sealed class GamepadInputService : IGamepadService
     private bool _previousDirectInputStickLeft;
     private bool _previousDirectInputStickRight;
 
+    private readonly ComboHoldTracker _xInputQuitCombo = new();
+    private readonly ComboHoldTracker _directInputQuitCombo = new();
+
+    /// <summary>
+    /// Tracks a button combo that must be held continuously for a configured duration before
+    /// firing once — used for the "quit current game" combo so it can't be triggered by a
+    /// single accidental press, and won't repeat-fire while still held afterwards.
+    /// </summary>
+    private sealed class ComboHoldTracker
+    {
+        private DateTime? _heldSince;
+        private bool _fired;
+
+        /// <returns><c>true</c> exactly once per hold, the moment the threshold is reached.</returns>
+        public bool Evaluate(bool isComboPressed, int thresholdMilliseconds)
+        {
+            if (!isComboPressed)
+            {
+                _heldSince = null;
+                _fired = false;
+                return false;
+            }
+
+            _heldSince ??= DateTime.UtcNow;
+
+            if (_fired || (DateTime.UtcNow - _heldSince.Value).TotalMilliseconds < thresholdMilliseconds)
+                return false;
+
+            _fired = true;
+            return true;
+        }
+    }
+
     public event EventHandler<GamepadButton>? ButtonPressed;
 
     public GamepadInputService(IOptions<TvLauncherOptions> options)
@@ -168,6 +208,13 @@ public sealed class GamepadInputService : IGamepadService
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.A), pressedBefore.HasFlag(XInputButtons.A), GamepadButton.Confirm);
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.B), pressedBefore.HasFlag(XInputButtons.B), GamepadButton.Cancel);
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.Start), pressedBefore.HasFlag(XInputButtons.Start), GamepadButton.Refresh);
+
+        if (_xInputQuitCombo.Evaluate(
+                pressedNow.HasFlag(XInputButtons.Back) && pressedNow.HasFlag(XInputButtons.Start),
+                _options.QuitHoldMilliseconds))
+        {
+            ButtonPressed?.Invoke(this, GamepadButton.Quit);
+        }
 
         _previousXInputButtons = gamepad.wButtons;
 
@@ -283,8 +330,19 @@ public sealed class GamepadInputService : IGamepadService
         RaiseButtonIfConfigured(buttons, mappings, "Cancel", GamepadButton.Cancel);
         RaiseButtonIfConfigured(buttons, mappings, "Refresh", GamepadButton.Refresh);
 
+        if (_directInputQuitCombo.Evaluate(IsQuitComboPressed(buttons, mappings), _options.QuitHoldMilliseconds))
+            ButtonPressed?.Invoke(this, GamepadButton.Quit);
+
         _previousDirectInputButtons = (bool[])buttons.Clone();
     }
+
+    private static bool IsQuitComboPressed(bool[] buttons, IReadOnlyDictionary<string, int> mappings)
+    {
+        return TryGetPressed(buttons, mappings, "Share") && TryGetPressed(buttons, mappings, "Refresh");
+    }
+
+    private static bool TryGetPressed(bool[] buttons, IReadOnlyDictionary<string, int> mappings, string key)
+        => mappings.TryGetValue(key, out var index) && index >= 0 && index < buttons.Length && buttons[index];
 
     private void RaiseButtonIfConfigured(bool[] buttons, IReadOnlyDictionary<string, int> mappings, string key, GamepadButton button)
     {

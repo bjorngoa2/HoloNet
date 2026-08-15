@@ -29,16 +29,25 @@ public class TvLauncherOptions
 
     /// <summary>
     /// DirectInput button indices (used for non-XInput pads such as PS4/PS5 DualShock/DualSense)
-    /// for the logical actions "Confirm", "Cancel", and "Refresh". Defaults match the common
-    /// PS4/PS5 DirectInput HID report layout (Cross=1, Circle=2, Options=9) — override here if a
-    /// specific controller numbers its buttons differently.
+    /// for the logical actions "Confirm", "Cancel", "Refresh", and "Share". Defaults match the
+    /// common PS4/PS5 DirectInput HID report layout (Cross=1, Circle=2, Options=9, Share=8) —
+    /// override here if a specific controller numbers its buttons differently.
     /// </summary>
     public Dictionary<string, int> DirectInputButtonMappings { get; set; } = new()
     {
         ["Confirm"] = 1,
         ["Cancel"] = 2,
-        ["Refresh"] = 9
+        ["Refresh"] = 9,
+        ["Share"] = 8
     };
+
+    /// <summary>
+    /// How long (in milliseconds) the quit combo — Options+Share on PlayStation pads,
+    /// Start+Back on Xbox pads — must be held while a game is running before it quits the
+    /// emulator and returns to the picker. Held (rather than a single press) deliberately, so
+    /// it can't be triggered by accident.
+    /// </summary>
+    public int QuitHoldMilliseconds { get; set; } = 1500;
 }
 
 /// <summary>
