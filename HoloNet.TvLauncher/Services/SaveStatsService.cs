@@ -41,9 +41,13 @@ public class SaveStatsService(IOptions<TvLauncherOptions> options, ILogger<SaveS
             return null;
 
         byte[]? data;
+        DateTime? lastPlayed;
         try
         {
-            data = Ps2MemoryCardReader.ReadFile(mapping.MemoryCardPath, mapping.SaveDirectoryName, mapping.SaveFileName);
+            var result = Ps2MemoryCardReader.ReadFileWithMetadata(mapping.MemoryCardPath, mapping.SaveDirectoryName,
+                mapping.SaveFileName);
+            data = result?.Data;
+            lastPlayed = result?.Modified;
         }
         catch (Exception ex)
         {
@@ -67,9 +71,9 @@ public class SaveStatsService(IOptions<TvLauncherOptions> options, ILogger<SaveS
             playtime = TimeSpan.FromSeconds(seconds);
         }
 
-        if (currency is null && playtime is null)
+        if (currency is null && playtime is null && lastPlayed is null)
             return null;
 
-        return new SaveStats(currency, mapping.CurrencyLabel, playtime);
+        return new SaveStats(currency, mapping.CurrencyLabel, playtime, lastPlayed);
     }
 }

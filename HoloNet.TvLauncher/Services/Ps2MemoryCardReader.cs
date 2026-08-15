@@ -26,7 +26,17 @@ public static class Ps2MemoryCardReader
     /// <paramref name="saveDirectoryName"/> on the memory card image at <paramref name="memoryCardPath"/>.
     /// Returns <c>null</c> if the card, directory, or file can't be found/parsed.
     /// </summary>
-    public static byte[]? ReadFile(string memoryCardPath, string saveDirectoryName, string fileName)
+    public static byte[]? ReadFile(string memoryCardPath, string saveDirectoryName, string fileName) =>
+        ReadFileWithMetadata(memoryCardPath, saveDirectoryName, fileName)?.Data;
+
+    /// <summary>
+    /// Like <see cref="ReadFile"/>, but also returns the file's on-card "modified" timestamp
+    /// (the save file's own directory entry, updated by the game every time it writes the save —
+    /// i.e. the PS2-equivalent of "last played"). Returns <c>null</c> under the same conditions
+    /// as <see cref="ReadFile"/>.
+    /// </summary>
+    public static (byte[] Data, DateTime? Modified)? ReadFileWithMetadata(string memoryCardPath,
+        string saveDirectoryName, string fileName)
     {
         if (!File.Exists(memoryCardPath))
             return null;
@@ -55,7 +65,8 @@ public static class Ps2MemoryCardReader
         if (fileEntry is null)
             return null;
 
-        return ReadFileData(reader, card, fileEntry.Cluster, fileEntry.Length);
+        var data = ReadFileData(reader, card, fileEntry.Cluster, fileEntry.Length);
+        return (data, fileEntry.Modified);
     }
 
     private sealed class CardInfo
@@ -77,6 +88,7 @@ public static class Ps2MemoryCardReader
         public uint Length;
         public uint Cluster;
         public string Name = string.Empty;
+        public DateTime? Modified;
 
         // Directory Entry Mode Flags, see ps2mc_dir.py: DF_DIR=0x0020, DF_FILE=0x0010, DF_EXISTS=0x8000.
         public bool IsDirectory => (Mode & 0x8020) == 0x8020;
@@ -186,11 +198,41 @@ public static class Ps2MemoryCardReader
         var mode = BitConverter.ToUInt16(cluster, offsetInCluster + 0x00);
         var length = BitConverter.ToUInt32(cluster, offsetInCluster + 0x04);
         var clusterNum = BitConverter.ToUInt32(cluster, offsetInCluster + 0x10);
+        var modified = ParseTimestamp(cluster, offsetInCluster + 0x18);
         var nameBytes = cluster.AsSpan(offsetInCluster + 0x40, 32);
         var nullIndex = nameBytes.IndexOf((byte)0);
         var name = Encoding.ASCII.GetString(nullIndex >= 0 ? nameBytes[..nullIndex] : nameBytes);
 
-        return new DirEntry { Mode = mode, Length = length, Cluster = clusterNum, Name = name };
+        return new DirEntry { Mode = mode, Length = length, Cluster = clusterNum, Name = name, Modified = modified };
+    }
+
+    /// <summary>
+    /// Parses an 8-byte PS2 memory card timestamp (byte 0 unused, then sec/min/hour/day/month as
+    /// plain binary bytes, then a little-endian u16 year), as used in the "created" (@0x08) and
+    /// "modified" (@0x18) fields of a directory entry. The PS2 BIOS always stores these in
+    /// Japan Standard Time (UTC+9), regardless of the console/game's own region — confirmed
+    /// against mymcplus's own <c>tod_to_time</c>, which subtracts 9 hours to get true UTC. This
+    /// converts to true UTC accordingly, so callers can safely call <c>.ToLocalTime()</c> to get
+    /// the host PC's local time. Returns <c>null</c> for an all-zero/invalid stamp.
+    /// </summary>
+    private static DateTime? ParseTimestamp(byte[] cluster, int offset)
+    {
+        var second = cluster[offset + 1];
+        var minute = cluster[offset + 2];
+        var hour = cluster[offset + 3];
+        var day = cluster[offset + 4];
+        var month = cluster[offset + 5];
+        var year = BitConverter.ToUInt16(cluster, offset + 6);
+
+        try
+        {
+            var jst = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc);
+            return DateTime.SpecifyKind(jst - TimeSpan.FromHours(9), DateTimeKind.Utc);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     private static List<DirEntry> ReadDirectoryEntries(BinaryReader reader, CardInfo card, uint firstCluster,
