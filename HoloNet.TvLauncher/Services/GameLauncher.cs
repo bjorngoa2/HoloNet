@@ -59,6 +59,8 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
         }
 
         var arguments = mapping.ArgumentsTemplate.Replace("{NetworkPath}", launchIntent.NetworkPath);
+        if (mapping.HideWindow && !string.IsNullOrWhiteSpace(mapping.HideWindowArgument))
+            arguments = $"{mapping.HideWindowArgument} {arguments}";
 
         try
         {

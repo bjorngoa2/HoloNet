@@ -67,6 +67,21 @@ public class EmulatorMapping
     public string ArgumentsTemplate { get; set; } = string.Empty;
 
     /// <summary>
+    /// When <c>true</c>, appends <see cref="HideWindowArgument"/> to the launch arguments so
+    /// the emulator hides its own window/UI while running (e.g. PCSX2's <c>-nogui</c>) —
+    /// only the game itself is shown, with no menu/taskbar window flashing up first. Defaults
+    /// to <c>false</c> (emulator shows its normal window).
+    /// </summary>
+    public bool HideWindow { get; set; }
+
+    /// <summary>
+    /// The command-line flag appended when <see cref="HideWindow"/> is <c>true</c>. Defaults
+    /// to PCSX2's <c>-nogui</c>; override per-emulator if a different one uses a different
+    /// flag for the same behavior.
+    /// </summary>
+    public string HideWindowArgument { get; set; } = "-nogui";
+
+    /// <summary>
     /// When <c>true</c>, the quit combo kills this emulator's process immediately instead of
     /// requesting a graceful close. Intended for emulators launched hidden (e.g. PCSX2's
     /// <c>-nogui</c>), where a graceful close would otherwise pop up a visible confirmation
