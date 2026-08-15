@@ -7,11 +7,13 @@ namespace HoloNet.TvLauncher.Views;
 /// <summary>
 /// Presentation wrapper around <see cref="GameDto"/> for binding in the picker grid.
 /// </summary>
-public class GameCardViewModel(GameDto game) : INotifyPropertyChanged
+public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INotifyPropertyChanged
 {
     private bool _isSelected;
 
     public GameDto Game { get; } = game;
+
+    public SaveStats? SaveStats { get; } = saveStats;
 
     public string Title => Game.Title;
 
@@ -23,6 +25,30 @@ public class GameCardViewModel(GameDto game) : INotifyPropertyChanged
         .Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Take(2)
         .Select(word => char.ToUpperInvariant(word[0])));
+
+    /// <summary>
+    /// Multi-line hover-info text shown as the card's tooltip, e.g. "Bolts: 867" and
+    /// "Playtime: 00:18:28". Empty when no save stats are configured/available for this game,
+    /// which suppresses the tooltip entirely (see the XAML's <c>ToolTipService.IsEnabled</c> binding).
+    /// </summary>
+    public string SaveStatsText
+    {
+        get
+        {
+            if (SaveStats is null)
+                return string.Empty;
+
+            var lines = new List<string>();
+            if (SaveStats.Currency is { } currency)
+                lines.Add($"{SaveStats.CurrencyLabel}: {currency:N0}");
+            if (SaveStats.Playtime is { } playtime)
+                lines.Add($"Playtime: {(int)playtime.TotalHours:D2}:{playtime.Minutes:D2}:{playtime.Seconds:D2}");
+
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
+
+    public bool HasSaveStats => SaveStatsText.Length > 0;
 
     public bool IsSelected
     {

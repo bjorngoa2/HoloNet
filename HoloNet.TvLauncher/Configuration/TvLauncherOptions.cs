@@ -48,6 +48,69 @@ public class TvLauncherOptions
     /// it can't be triggered by accident.
     /// </summary>
     public int QuitHoldMilliseconds { get; set; } = 1500;
+
+    /// <summary>
+    /// Per-game save-stats definitions (Bolts, playtime, etc.) shown as hover info on a game
+    /// card in the picker, keyed by the game's <c>Title</c> exactly as returned by the Games
+    /// API (case-insensitive). Keyed by title rather than <c>Id</c> because a game's <c>Id</c>
+    /// is a Base64Url-encoded absolute file path (see HoloNet's file-identity convention) and
+    /// is therefore unstable across machines/containers — titles are far more likely to stay
+    /// constant. Reading real stats requires reverse-engineered, game-and-region-specific byte
+    /// offsets, so only games explicitly configured here will show stats — everything else just
+    /// shows the normal card with no hover info.
+    /// </summary>
+    public Dictionary<string, SaveStatsMapping> SaveStats { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Describes where to find a game's save data on a PS2-style memory card image, and which
+/// byte offsets within the save file hold which stats. Currently PS2/PCSX2-specific — the
+/// values here only make sense for a single game+region combination (offsets differ between
+/// NTSC/US and PAL/EU releases of the same game, for example).
+/// </summary>
+public class SaveStatsMapping
+{
+    /// <summary>
+    /// Absolute path to the PCSX2 memory card image (e.g. <c>Mcd001.ps2</c>) to read from.
+    /// </summary>
+    public string MemoryCardPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Name of the save directory on the memory card, e.g. <c>BESCES-50916RATCHET</c>. Visible
+    /// via a memory card browser/tool such as mymc+.
+    /// </summary>
+    public string SaveDirectoryName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Name of the individual save-slot file within the directory to read, e.g. <c>save0.bin</c>.
+    /// PS2 games commonly store one file per save slot; only a single slot is read here
+    /// (normally the most-recently-used one) since there's no live way to know which slot the
+    /// player last used without also parsing <c>icon.sys</c>.
+    /// </summary>
+    public string SaveFileName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Byte offset (little-endian uint32) within the save file where the currency/points value
+    /// is stored, e.g. Ratchet &amp; Clank's "Bolts" at offset 0x24. Null if not applicable/known.
+    /// </summary>
+    public int? CurrencyOffset { get; set; }
+
+    /// <summary>
+    /// Display label for the value at <see cref="CurrencyOffset"/>, e.g. "Bolts".
+    /// </summary>
+    public string CurrencyLabel { get; set; } = "Currency";
+
+    /// <summary>
+    /// Byte offset (little-endian uint32) within the save file where a frame-count playtime
+    /// counter is stored, e.g. offset 0x3c for Ratchet &amp; Clank. Null if not applicable/known.
+    /// </summary>
+    public int? PlaytimeFramesOffset { get; set; }
+
+    /// <summary>
+    /// Frame rate used to convert <see cref="PlaytimeFramesOffset"/>'s raw frame count into a
+    /// duration. PAL games run at 50fps, NTSC at 60fps.
+    /// </summary>
+    public double PlaytimeFrameRate { get; set; } = 50.0;
 }
 
 /// <summary>
