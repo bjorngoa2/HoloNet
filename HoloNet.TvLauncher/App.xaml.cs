@@ -24,6 +24,7 @@ public partial class App : Application
                 services.AddHttpClient<IGamesApiClient, GamesApiClient>();
                 services.AddSingleton<IGameLauncher, GameLauncher>();
                 services.AddSingleton<IGamepadService, GamepadInputService>();
+                services.AddSingleton<ISaveStatsService, SaveStatsService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();
