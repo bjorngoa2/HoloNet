@@ -90,3 +90,7 @@ TestResults/
 HoloNet.Video/data/
 HoloNet.Photos/data/
 HoloNet.Games/data/
+
+# Frontend build output and dependencies
+HoloNet.Portal/wwwroot/
+HoloNet.Portal/ClientApp/node_modules/
