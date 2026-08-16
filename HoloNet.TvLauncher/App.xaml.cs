@@ -17,7 +17,12 @@ public partial class App : Application
         base.OnStartup(e);
 
         _host = Host.CreateDefaultBuilder()
-            .ConfigureAppConfiguration(config => config.AddJsonFile("appsettings.json", optional: false))
+            .ConfigureAppConfiguration(config => config
+                .AddJsonFile("appsettings.json", optional: false)
+                // Optional, gitignored local override — lets you point GamesApiBaseUrl at a
+                // local Games API instance (e.g. http://localhost:5046/api/v1/games) without
+                // touching the committed production appsettings.json.
+                .AddJsonFile("appsettings.local.json", optional: true))
             .ConfigureServices((context, services) =>
             {
                 services.Configure<TvLauncherOptions>(context.Configuration.GetSection("TvLauncher"));

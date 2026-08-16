@@ -4,6 +4,10 @@ using HoloNet.Shared.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Optional, gitignored local override — lets you point GameService (e.g. NetworkShareRoot) at
+// local paths without touching the committed appsettings.json/appsettings.Development.json.
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
+
 builder.Services.Configure<GameServiceOptions>(builder.Configuration.GetSection("GameService"));
 
 builder.Services.AddScoped<IGameService, GameService>();
