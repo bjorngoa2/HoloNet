@@ -6,4 +6,5 @@ namespace HoloNet.TvLauncher.Models;
 /// every stat, and a game with no <see cref="SaveStatsMapping"/> configured at all simply won't
 /// have one of these produced.
 /// </summary>
-public record SaveStats(int? Currency, string? CurrencyLabel, TimeSpan? Playtime, DateTime? LastPlayed);
+public record SaveStats(int? Currency, string? CurrencyLabel, TimeSpan? Playtime, DateTime? LastPlayed,
+    string? Location = null);

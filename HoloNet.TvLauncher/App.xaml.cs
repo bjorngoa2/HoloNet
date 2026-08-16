@@ -16,6 +16,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // PS2 icon.sys save titles are Shift-JIS encoded; that codepage isn't included by
+        // default in .NET (System.Text.Encoding.CodePages ships it) — must be registered before
+        // any Encoding.GetEncoding("shift_jis") call (see Ps2MemoryCardReader).
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
         _host = Host.CreateDefaultBuilder()
             .ConfigureAppConfiguration(config => config
                 .AddJsonFile("appsettings.json", optional: false)
@@ -30,6 +35,7 @@ public partial class App : Application
                 services.AddSingleton<IGameLauncher, GameLauncher>();
                 services.AddSingleton<IGamepadService, GamepadInputService>();
                 services.AddSingleton<ISaveStatsService, SaveStatsService>();
+                services.AddSingleton<ILocationDiscoveryService, LocationDiscoveryService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();

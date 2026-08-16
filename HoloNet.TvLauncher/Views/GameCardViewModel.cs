@@ -61,6 +61,8 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
                 lines.Add($"{SaveStats.CurrencyLabel}: {currency:N0}");
             if (SaveStats.Playtime is { } playtime)
                 lines.Add($"Playtime: {(int)playtime.TotalHours:D2}:{playtime.Minutes:D2}:{playtime.Seconds:D2}");
+            if (SaveStats.Location is { } location)
+                lines.Add($"Location: {location}");
             if (SaveStats.LastPlayed is { } lastPlayed)
                 lines.Add($"Last played: {lastPlayed.ToLocalTime():g}");
 

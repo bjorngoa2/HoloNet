@@ -69,6 +69,83 @@ public static class Ps2MemoryCardReader
         return (data, fileEntry.Modified);
     }
 
+    /// <summary>
+    /// One save directory found on a memory card, with everything that can be determined
+    /// generically (i.e. without any per-game reverse-engineered offsets): the directory name
+    /// itself, the human-readable title from its <c>icon.sys</c> (present in essentially every
+    /// PS2 save, in any region — this is what the PS2 BIOS's own save browser displays, so it's
+    /// the most reliable generic hook for matching a save to a game), the newest
+    /// last-modified timestamp across its save files ("last played"), and which file was most
+    /// recently modified (used as a stand-in "most relevant save slot" when no specific file has
+    /// been configured).
+    /// </summary>
+    public sealed record Ps2SaveEntry(string DirectoryName, string? Title, DateTime? LastModified,
+        string? MostRecentFileName);
+
+    /// <summary>
+    /// Scans every save directory on the memory card image at <paramref name="memoryCardPath"/>
+    /// and returns generic, per-save metadata for each — see <see cref="Ps2SaveEntry"/>. Used to
+    /// auto-discover which on-card directory belongs to which game (by title) without requiring
+    /// every game to be hand-configured with its exact directory/file names. Returns an empty
+    /// list if the card doesn't exist or can't be parsed; a single unreadable directory or
+    /// icon.sys within an otherwise-valid card is skipped rather than failing the whole scan.
+    /// </summary>
+    public static IReadOnlyList<Ps2SaveEntry> ListSaves(string memoryCardPath)
+    {
+        if (!File.Exists(memoryCardPath))
+            return [];
+
+        using var stream = new FileStream(memoryCardPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new BinaryReader(stream);
+
+        var card = ReadSuperblock(reader);
+        if (card is null)
+            return [];
+
+        var rootEntries = ReadDirectoryEntries(reader, card, card.RootDirCluster, entryCountOverride: null);
+        var results = new List<Ps2SaveEntry>();
+
+        foreach (var dirEntry in rootEntries.Where(e => e.IsDirectory))
+        {
+            List<DirEntry> files;
+            try
+            {
+                files = ReadDirectoryEntries(reader, card, dirEntry.Cluster, dirEntry.Length)
+                    .Where(e => e.IsFile)
+                    .ToList();
+            }
+            catch
+            {
+                continue; // Skip a corrupt/unreadable directory rather than failing the whole scan.
+            }
+
+            string? title = null;
+            var iconEntry = files.FirstOrDefault(f => string.Equals(f.Name, "icon.sys", StringComparison.OrdinalIgnoreCase));
+            if (iconEntry is not null)
+            {
+                try
+                {
+                    title = ParseIconSysTitle(ReadFileData(reader, card, iconEntry.Cluster, iconEntry.Length));
+                }
+                catch
+                {
+                    // Ignore an unreadable icon.sys — the directory name is still usable as a fallback match.
+                }
+            }
+
+            var saveFiles = files.Where(f => !string.Equals(f.Name, "icon.sys", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var mostRecent = saveFiles.OrderByDescending(f => f.Modified ?? DateTime.MinValue).FirstOrDefault();
+            var lastModified = saveFiles.Select(f => f.Modified).Where(m => m.HasValue)
+                .Select(m => m!.Value).DefaultIfEmpty().Max();
+
+            results.Add(new Ps2SaveEntry(dirEntry.Name, title, lastModified == default ? null : lastModified,
+                mostRecent?.Name));
+        }
+
+        return results;
+    }
+
     private sealed class CardInfo
     {
         public int PageSize;
@@ -191,6 +268,38 @@ public static class Ps2MemoryCardReader
         }
 
         return chain;
+    }
+
+    /// <summary>
+    /// Extracts the human-readable save title from an <c>icon.sys</c> file's raw bytes (see
+    /// https://www.ps2savetools.com/documents/iconsys-format/). The title is a 68-byte,
+    /// null-terminated, Shift-JIS-encoded field at offset 0xC0, optionally split into two lines
+    /// by a line-break offset at 0x6 — collapsed into one line here (joined with a space) since
+    /// only the plain title text is needed for game-title matching, not the original PS2
+    /// save-browser's two-line layout. Returns <c>null</c> for a missing/invalid magic header.
+    /// </summary>
+    private static string? ParseIconSysTitle(byte[] iconSys)
+    {
+        if (iconSys.Length < 0xC0 + 68 || iconSys[0] != (byte)'P' || iconSys[1] != (byte)'S' ||
+            iconSys[2] != (byte)'2' || iconSys[3] != (byte)'D')
+            return null;
+
+        var titleBytes = iconSys.AsSpan(0xC0, 68);
+        var nullIndex = titleBytes.IndexOf((byte)0);
+        var trimmed = nullIndex >= 0 ? titleBytes[..nullIndex] : titleBytes;
+        if (trimmed.IsEmpty)
+            return null;
+
+        var shiftJis = Encoding.GetEncoding("shift_jis");
+        var title = shiftJis.GetString(trimmed);
+
+        // The 2nd-line-offset field (@0x6) marks where line 2 starts within the decoded string;
+        // insert a space there instead of a hard line break for title-matching purposes.
+        var secondLineOffset = BitConverter.ToUInt16(iconSys, 0x6);
+        if (secondLineOffset > 0 && secondLineOffset < title.Length)
+            title = title[..secondLineOffset].TrimEnd() + " " + title[secondLineOffset..].TrimStart();
+
+        return title.Trim();
     }
 
     private static DirEntry ParseDirEntry(byte[] cluster, int offsetInCluster)

@@ -66,44 +66,65 @@ public class TvLauncherOptions
     public bool ScreensaverEnabled { get; set; } = true;
 
     /// <summary>
+    /// Absolute paths to every PCSX2 memory card image (e.g. <c>Mcd001.ps2</c>, <c>Mcd002.ps2</c>)
+    /// to scan for save data. Every save directory found on these cards is auto-matched to a
+    /// game by its <c>icon.sys</c> title (see <see cref="SaveStats"/> for how to add
+    /// game-specific currency/playtime stats on top of the auto-discovered match) — no manual
+    /// per-game directory/file configuration is required just to get "last played" working.
+    /// </summary>
+    public List<string> MemoryCardPaths { get; set; } = new();
+
+    /// <summary>
     /// Per-game save-stats definitions (Bolts, playtime, etc.) shown as hover info on a game
     /// card in the picker, keyed by the game's <c>Title</c> exactly as returned by the Games
     /// API (case-insensitive). Keyed by title rather than <c>Id</c> because a game's <c>Id</c>
     /// is a Base64Url-encoded absolute file path (see HoloNet's file-identity convention) and
     /// is therefore unstable across machines/containers — titles are far more likely to stay
-    /// constant. Reading real stats requires reverse-engineered, game-and-region-specific byte
-    /// offsets, so only games explicitly configured here will show stats — everything else just
-    /// shows the normal card with no hover info.
+    /// constant. Only needed for games where you want currency/playtime shown — those require
+    /// reverse-engineered, game-and-region-specific byte offsets that can't be auto-discovered.
+    /// "Last played" and the save directory/file to read from are auto-discovered from
+    /// <see cref="MemoryCardPaths"/> by matching the save's on-card <c>icon.sys</c> title
+    /// against the game's title (see <see cref="SaveStatsMapping.SaveDirectoryName"/> and
+    /// <see cref="SaveStatsMapping.SaveFileName"/> to override that auto-match if it's wrong or
+    /// ambiguous for a specific game).
     /// </summary>
     public Dictionary<string, SaveStatsMapping> SaveStats { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>
-/// Describes where to find a game's save data on a PS2-style memory card image, and which
-/// byte offsets within the save file hold which stats. Currently PS2/PCSX2-specific — the
-/// values here only make sense for a single game+region combination (offsets differ between
-/// NTSC/US and PAL/EU releases of the same game, for example).
+/// Optional per-game overrides/extras on top of the auto-discovered save match (see
+/// <see cref="TvLauncherOptions.MemoryCardPaths"/> and <see cref="TvLauncherOptions.SaveStats"/>).
+/// Every field here is optional: leave the whole entry out entirely and a game still gets
+/// generic "last played" info for free (if a matching save is found by title); add an entry
+/// only to supply currency/playtime offsets, or to override the auto-match if it picks the
+/// wrong save (e.g. two games/regions share a very similar on-card title).
 /// </summary>
 public class SaveStatsMapping
 {
     /// <summary>
-    /// Absolute path to the PCSX2 memory card image (e.g. <c>Mcd001.ps2</c>) to read from.
+    /// Absolute path to a specific PCSX2 memory card image to read from, overriding the
+    /// auto-scan across all of <see cref="TvLauncherOptions.MemoryCardPaths"/>. Only needed if
+    /// a game's save needs to be pinned to one specific card (e.g. when the same game exists on
+    /// two different cards for two different players).
     /// </summary>
-    public string MemoryCardPath { get; set; } = string.Empty;
+    public string? MemoryCardPath { get; set; }
 
     /// <summary>
-    /// Name of the save directory on the memory card, e.g. <c>BESCES-50916RATCHET</c>. Visible
-    /// via a memory card browser/tool such as mymc+.
+    /// Name of the save directory on the memory card, e.g. <c>BESCES-50916RATCHET</c>,
+    /// overriding the auto-match-by-<c>icon.sys</c>-title lookup. Only needed if the automatic
+    /// title match is wrong or ambiguous for this game. Visible via a memory card browser/tool
+    /// such as mymc+.
     /// </summary>
-    public string SaveDirectoryName { get; set; } = string.Empty;
+    public string? SaveDirectoryName { get; set; }
 
     /// <summary>
-    /// Name of the individual save-slot file within the directory to read, e.g. <c>save0.bin</c>.
-    /// PS2 games commonly store one file per save slot; only a single slot is read here
-    /// (normally the most-recently-used one) since there's no live way to know which slot the
-    /// player last used without also parsing <c>icon.sys</c>.
+    /// Name of the individual save-slot file within the directory to read, e.g. <c>save0.bin</c>,
+    /// overriding the auto-picked most-recently-modified file in the matched directory. PS2
+    /// games commonly store one file per save slot; only needed if the most-recently-modified
+    /// file isn't the one that actually holds the stats (e.g. a game keeps its counters in a
+    /// different, less-frequently-written file within the same save directory).
     /// </summary>
-    public string SaveFileName { get; set; } = string.Empty;
+    public string? SaveFileName { get; set; }
 
     /// <summary>
     /// Byte offset (little-endian uint32) within the save file where the currency/points value
@@ -127,6 +148,26 @@ public class SaveStatsMapping
     /// duration. PAL games run at 50fps, NTSC at 60fps.
     /// </summary>
     public double PlaytimeFrameRate { get; set; } = 50.0;
+
+    /// <summary>
+    /// Byte offset (little-endian int32) within the save file where a location/level index is
+    /// stored, e.g. Ratchet &amp; Clank's current-planet ID. Null if not applicable/known.
+    /// Combined with <see cref="LocationNames"/> to show a human-readable name; there's no way
+    /// to auto-discover what a raw numeric ID actually means (it requires knowing the specific
+    /// game's internal level ordering), so unmapped IDs are recorded to
+    /// <c>discovered-locations.json</c> (see <see cref="LocationDiscoveryService"/>) for you to
+    /// name later, rather than guessed at.
+    /// </summary>
+    public int? LocationOffset { get; set; }
+
+    /// <summary>
+    /// Maps a raw value read from <see cref="LocationOffset"/> to a human-readable name, e.g.
+    /// <c>{ "1": "Novalis", "3": "Kerwan" }</c>. Build this up over time as you play — any ID
+    /// encountered that isn't in this map yet is auto-recorded (with a timestamp) to
+    /// <c>discovered-locations.json</c> next to the exe, so you don't have to manually
+    /// reverse-engineer or remember which raw numbers you've already seen.
+    /// </summary>
+    public Dictionary<int, string> LocationNames { get; set; } = new();
 }
 
 /// <summary>
