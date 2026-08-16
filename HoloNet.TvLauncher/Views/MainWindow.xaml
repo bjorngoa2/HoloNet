@@ -95,5 +95,21 @@
                        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"
                        TextAlignment="Center" MaxWidth="800" />
         </Grid>
+
+        <!--
+            Idle screensaver: mostly-black background (so the static card grid isn't left
+            displayed for hours) with a small dim logo that continuously drifts and bounces off
+            the edges (classic "DVD logo" pattern) so no single group of pixels stays lit at
+            constant brightness — burn-in protection for OLED TVs in particular. Any input
+            dismisses it (see MainWindow.xaml.cs).
+        -->
+        <Grid x:Name="ScreensaverGrid" Grid.RowSpan="3" Background="Black" Visibility="Collapsed">
+            <TextBlock x:Name="ScreensaverLogo" Text="HoloNet" FontSize="28" FontWeight="Bold"
+                       Foreground="#33FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <TextBlock.RenderTransform>
+                    <TranslateTransform x:Name="ScreensaverLogoTransform" />
+                </TextBlock.RenderTransform>
+            </TextBlock>
+        </Grid>
     </Grid>
 </Window>

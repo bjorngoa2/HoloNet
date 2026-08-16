@@ -50,6 +50,22 @@ public class TvLauncherOptions
     public int QuitHoldMilliseconds { get; set; } = 1500;
 
     /// <summary>
+    /// How many minutes of no gamepad/keyboard input before a burn-in-protection screensaver
+    /// takes over the picker screen (see <see cref="ScreensaverEnabled"/>). This exists because
+    /// the picker is a static, bright grid of cards left on-screen for potentially hours at a
+    /// time on a TV — a real burn-in risk on OLED panels in particular. Any input immediately
+    /// dismisses it and resets the idle timer.
+    /// </summary>
+    public double ScreensaverIdleMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Whether the idle screensaver is enabled at all. Defaults to <c>true</c>; set to
+    /// <c>false</c> to disable entirely (e.g. on a non-OLED display where burn-in isn't a
+    /// concern).
+    /// </summary>
+    public bool ScreensaverEnabled { get; set; } = true;
+
+    /// <summary>
     /// Per-game save-stats definitions (Bolts, playtime, etc.) shown as hover info on a game
     /// card in the picker, keyed by the game's <c>Title</c> exactly as returned by the Games
     /// API (case-insensitive). Keyed by title rather than <c>Id</c> because a game's <c>Id</c>

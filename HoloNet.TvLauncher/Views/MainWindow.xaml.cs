@@ -1,8 +1,12 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
+using HoloNet.TvLauncher.Configuration;
 using HoloNet.TvLauncher.Models;
 using HoloNet.TvLauncher.Services;
+using Microsoft.Extensions.Options;
 
 namespace HoloNet.TvLauncher.Views;
 
@@ -11,20 +15,36 @@ public partial class MainWindow : Window
     // Matches CardStyle Width (220) + left/right Margin (12 each) in MainWindow.xaml.
     private const double CardFootprintWidth = 220 + 24;
 
+    // How often the screensaver logo's position is updated — a smooth-looking "DVD logo" drift
+    // without needing a full WPF storyboard/animation for something this simple.
+    private static readonly TimeSpan ScreensaverAnimationInterval = TimeSpan.FromMilliseconds(30);
+    private const double ScreensaverLogoSpeedPixelsPerSecond = 40;
+
     private readonly IGamesApiClient _gamesApiClient;
     private readonly IGameLauncher _gameLauncher;
     private readonly IGamepadService _gamepadService;
     private readonly ISaveStatsService _saveStatsService;
+    private readonly TvLauncherOptions _options;
 
     private readonly List<GameCardViewModel> _cards = [];
     private int _selectedIndex;
     private bool _isBusy;
 
+    private DateTime _lastActivityUtc = DateTime.UtcNow;
+    private readonly DispatcherTimer _idleCheckTimer;
+    private DispatcherTimer? _screensaverAnimationTimer;
+    private bool _screensaverActive;
+    private double _logoX;
+    private double _logoY;
+    private double _logoVelocityX = ScreensaverLogoSpeedPixelsPerSecond;
+    private double _logoVelocityY = ScreensaverLogoSpeedPixelsPerSecond;
+
     public MainWindow(
         IGamesApiClient gamesApiClient,
         IGameLauncher gameLauncher,
         IGamepadService gamepadService,
-        ISaveStatsService saveStatsService)
+        ISaveStatsService saveStatsService,
+        IOptions<TvLauncherOptions> options)
     {
         InitializeComponent();
 
@@ -32,6 +52,10 @@ public partial class MainWindow : Window
         _gameLauncher = gameLauncher;
         _gamepadService = gamepadService;
         _saveStatsService = saveStatsService;
+        _options = options.Value;
+
+        _idleCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _idleCheckTimer.Tick += (_, _) => CheckIdleTimeout();
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
         Loaded += async (_, _) =>
@@ -39,11 +63,15 @@ public partial class MainWindow : Window
             _gamepadService.AttachWindowHandle(new WindowInteropHelper(this).Handle);
             await LoadGamesAsync();
             _gamepadService.Start();
+            if (_options.ScreensaverEnabled)
+                _idleCheckTimer.Start();
         };
         Closed += (_, _) =>
         {
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
+            _idleCheckTimer.Stop();
+            _screensaverAnimationTimer?.Stop();
         };
     }
 
@@ -124,6 +152,14 @@ public partial class MainWindow : Window
 
     private async void HandleButton(GamepadButton button)
     {
+        _lastActivityUtc = DateTime.UtcNow;
+
+        if (_screensaverActive)
+        {
+            HideScreensaver();
+            return;
+        }
+
         if (_isBusy)
         {
             if (button is GamepadButton.Confirm or GamepadButton.Cancel && _dismissWait is not null)
@@ -216,6 +252,7 @@ public partial class MainWindow : Window
         {
             HideOverlay();
             _isBusy = false;
+            _lastActivityUtc = DateTime.UtcNow;
         }
     }
 
@@ -235,4 +272,65 @@ public partial class MainWindow : Window
     }
 
     private void HideOverlay() => OverlayGrid.Visibility = Visibility.Collapsed;
+
+    private void CheckIdleTimeout()
+    {
+        // Don't show the screensaver over an emulator (it's covering the window anyway and
+        // constantly redrawing, so there's no burn-in risk from TvLauncher itself) or while a
+        // modal overlay/error message is up.
+        if (_screensaverActive || _isBusy)
+            return;
+
+        var idleFor = DateTime.UtcNow - _lastActivityUtc;
+        if (idleFor.TotalMinutes >= _options.ScreensaverIdleMinutes)
+            ShowScreensaver();
+    }
+
+    private void ShowScreensaver()
+    {
+        _screensaverActive = true;
+        ScreensaverGrid.Visibility = Visibility.Visible;
+
+        _logoX = 0;
+        _logoY = 0;
+        _logoVelocityX = ScreensaverLogoSpeedPixelsPerSecond;
+        _logoVelocityY = ScreensaverLogoSpeedPixelsPerSecond;
+
+        _screensaverAnimationTimer ??= new DispatcherTimer { Interval = ScreensaverAnimationInterval };
+        _screensaverAnimationTimer.Tick -= OnScreensaverAnimationTick;
+        _screensaverAnimationTimer.Tick += OnScreensaverAnimationTick;
+        _screensaverAnimationTimer.Start();
+    }
+
+    private void HideScreensaver()
+    {
+        _screensaverActive = false;
+        ScreensaverGrid.Visibility = Visibility.Collapsed;
+        _screensaverAnimationTimer?.Stop();
+    }
+
+    private void OnScreensaverAnimationTick(object? sender, EventArgs e)
+    {
+        var maxX = Math.Max(0, ActualWidth - ScreensaverLogo.ActualWidth);
+        var maxY = Math.Max(0, ActualHeight - ScreensaverLogo.ActualHeight);
+        var deltaSeconds = ScreensaverAnimationInterval.TotalSeconds;
+
+        _logoX += _logoVelocityX * deltaSeconds;
+        _logoY += _logoVelocityY * deltaSeconds;
+
+        if (_logoX <= 0 || _logoX >= maxX)
+        {
+            _logoX = Math.Clamp(_logoX, 0, maxX);
+            _logoVelocityX = -_logoVelocityX;
+        }
+
+        if (_logoY <= 0 || _logoY >= maxY)
+        {
+            _logoY = Math.Clamp(_logoY, 0, maxY);
+            _logoVelocityY = -_logoVelocityY;
+        }
+
+        ScreensaverLogoTransform.X = _logoX;
+        ScreensaverLogoTransform.Y = _logoY;
+    }
 }
