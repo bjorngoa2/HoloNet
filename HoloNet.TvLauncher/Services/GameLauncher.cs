@@ -33,6 +33,23 @@ public interface IGameLauncher
     /// Returns <c>false</c> if no emulator is currently running.
     /// </summary>
     Task<bool> QuitCurrentGameAsync();
+
+    /// <summary>
+    /// Title of the game currently running (matches the emulator process being tracked by
+    /// <see cref="QuitCurrentGameAsync"/>), or <c>null</c> if nothing is running. Exposed so the
+    /// quit flow can capture a "where I currently am" showcase screenshot tagged to the right
+    /// game before the emulator actually closes.
+    /// </summary>
+    string? CurrentGameTitle { get; }
+
+    /// <summary>
+    /// Win32 window handle (HWND) of the currently-running emulator's main window, or
+    /// <see cref="IntPtr.Zero"/> if nothing is running or the window hasn't been created yet.
+    /// Used to capture a screenshot of the emulator specifically (see
+    /// <see cref="IGameScreenshotService"/>) rather than whatever happens to be on top of the
+    /// whole screen at the moment of capture.
+    /// </summary>
+    IntPtr CurrentEmulatorWindowHandle { get; }
 }
 
 /// <summary>
@@ -47,6 +64,25 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
     private readonly TvLauncherOptions _options = options.Value;
     private System.Diagnostics.Process? _currentProcess;
     private EmulatorMapping? _currentMapping;
+    private string? _currentGameTitle;
+
+    public string? CurrentGameTitle => _currentGameTitle;
+
+    public IntPtr CurrentEmulatorWindowHandle
+    {
+        get
+        {
+            if (_currentProcess is not { HasExited: false } process)
+                return IntPtr.Zero;
+
+            // The Process object caches MainWindowHandle from when it was first queried; the
+            // emulator's actual window may not have existed yet at that point (or PCSX2, when
+            // launched hidden then later un-hidden, can create/replace it later) — refresh to
+            // get the current handle.
+            process.Refresh();
+            return process.MainWindowHandle;
+        }
+    }
 
     public async Task<GameLaunchResult> LaunchAsync(LaunchIntentDto launchIntent, CancellationToken cancellationToken = default)
     {
@@ -76,6 +112,7 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
 
             _currentProcess = process;
             _currentMapping = mapping;
+            _currentGameTitle = launchIntent.Title;
             try
             {
                 await process.WaitForExitAsync(cancellationToken);
@@ -84,6 +121,7 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
             {
                 _currentProcess = null;
                 _currentMapping = null;
+                _currentGameTitle = null;
             }
 
             return new GameLaunchResult(LaunchOutcome.Success);

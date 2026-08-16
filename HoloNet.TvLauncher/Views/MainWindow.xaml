@@ -89,6 +89,18 @@
                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,12"
                    Background="#AA0D0D12" Padding="12,8" Visibility="Collapsed" />
 
+        <!--
+            "Where I currently am" showcase: a larger preview of the screenshot captured the
+            last time the player quit the selected game, shown docked at the bottom-left of the
+            grid (underneath the row of cards) rather than replacing the card's own cover-art
+            thumbnail. Populated/shown from code-behind (see UpdateSaveInfo) since it tracks
+            whichever card is currently selected.
+        -->
+        <Border x:Name="ShowcaseBorder" Grid.Row="1" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                Margin="32,0,0,12" Background="#AA0D0D12" CornerRadius="6" Padding="6" Visibility="Collapsed">
+            <Image x:Name="ShowcaseImage" Width="480" Height="270" Stretch="Uniform" />
+        </Border>
+
         <!-- Full-screen overlay shown while an emulator has focus / during load / on error. -->
         <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#DD0D0D12" Visibility="Collapsed">
             <TextBlock x:Name="OverlayText" Foreground="{StaticResource TextBrush}" FontSize="28"

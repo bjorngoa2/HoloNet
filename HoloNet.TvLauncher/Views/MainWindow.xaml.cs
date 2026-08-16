@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly IGameLauncher _gameLauncher;
     private readonly IGamepadService _gamepadService;
     private readonly ISaveStatsService _saveStatsService;
+    private readonly IGameScreenshotService _screenshotService;
     private readonly TvLauncherOptions _options;
 
     private readonly List<GameCardViewModel> _cards = [];
@@ -44,6 +45,7 @@ public partial class MainWindow : Window
         IGameLauncher gameLauncher,
         IGamepadService gamepadService,
         ISaveStatsService saveStatsService,
+        IGameScreenshotService screenshotService,
         IOptions<TvLauncherOptions> options)
     {
         InitializeComponent();
@@ -52,6 +54,7 @@ public partial class MainWindow : Window
         _gameLauncher = gameLauncher;
         _gamepadService = gamepadService;
         _saveStatsService = saveStatsService;
+        _screenshotService = screenshotService;
         _options = options.Value;
 
         _idleCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -83,7 +86,13 @@ public partial class MainWindow : Window
         {
             var games = await _gamesApiClient.GetGamesAsync();
             _cards.Clear();
-            _cards.AddRange(games.Select(g => new GameCardViewModel(g, _saveStatsService.GetStats(g.Title))));
+            _cards.AddRange(games.Select(g =>
+            {
+                var card = new GameCardViewModel(g, _saveStatsService.GetStats(g.Title));
+                if (_options.ShowcaseScreenshotEnabled)
+                    card.RefreshScreenshot(_screenshotService);
+                return card;
+            }));
             GamesItemsControl.ItemsSource = _cards;
 
             _selectedIndex = _cards.Count > 0 ? 0 : -1;
@@ -119,6 +128,28 @@ public partial class MainWindow : Window
         else
         {
             SaveInfoText.Visibility = Visibility.Collapsed;
+        }
+
+        if (selected?.ShowcaseScreenshotPath is { } screenshotPath)
+        {
+            // WPF caches decoded BitmapImages by URI internally — IgnoreImageCache is required
+            // so re-loading the same path after a fresh capture (same file, new content)
+            // actually reads the new file instead of returning the previous, stale image.
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache;
+            bitmap.UriSource = new Uri(screenshotPath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            ShowcaseImage.Source = bitmap;
+            ShowcaseBorder.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            ShowcaseImage.Source = null;
+            ShowcaseBorder.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -166,7 +197,9 @@ public partial class MainWindow : Window
                 _dismissWait.TrySetResult();
 
             if (button == GamepadButton.Quit)
+            {
                 await _gameLauncher.QuitCurrentGameAsync();
+            }
 
             return;
         }
@@ -235,7 +268,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var result = await _gameLauncher.LaunchAsync(launchIntent);
+            var result = await StartShowcaseTimerAndLaunchAsync(launchIntent);
             if (result.Outcome != LaunchOutcome.Success)
             {
                 ShowOverlay($"Couldn't launch \"{game.Title}\":\n{result.ErrorMessage}\n\nPress A to dismiss.");
@@ -246,6 +279,8 @@ public partial class MainWindow : Window
             // refresh this card's stats now (rather than the stale copy fetched at library load)
             // and refresh the on-screen panel if this card is still the selected one.
             _cards[_selectedIndex].SaveStats = _saveStatsService.GetStats(game.Title);
+            if (_options.ShowcaseScreenshotEnabled)
+                _cards[_selectedIndex].RefreshScreenshot(_screenshotService);
             UpdateSaveInfo();
         }
         finally
@@ -257,6 +292,56 @@ public partial class MainWindow : Window
     }
 
     private TaskCompletionSource? _dismissWait;
+
+    /// <summary>
+    /// Runs <see cref="IGameLauncher.LaunchAsync"/> while periodically capturing a "where I
+    /// currently am" showcase screenshot (see <see cref="TvLauncherOptions.ShowcaseScreenshotIntervalMinutes"/>)
+    /// for as long as the emulator is running, rather than only at quit time. The quit hold-combo
+    /// shares its Start button with several emulators' own pause/menu overlay, so capturing then
+    /// would often show that menu instead of actual gameplay — a timer avoids that entirely.
+    /// Opt-in via <see cref="TvLauncherOptions.ShowcaseScreenshotEnabled"/>; when disabled, this
+    /// just launches the game without starting any capture timer.
+    /// </summary>
+    private async Task<GameLaunchResult> StartShowcaseTimerAndLaunchAsync(LaunchIntentDto launchIntent)
+    {
+        if (!_options.ShowcaseScreenshotEnabled)
+            return await _gameLauncher.LaunchAsync(launchIntent);
+
+        var captureInProgress = 0;
+        var timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(_options.ShowcaseScreenshotIntervalMinutes)
+        };
+        timer.Tick += (_, _) =>
+        {
+            if (_gameLauncher.CurrentGameTitle is { } runningTitle)
+            {
+                // Skip this tick if a previous capture is still running (e.g. the WGC/PCSX2
+                // fallback chain took longer than the interval) — letting captures overlap means
+                // an older, slower capture can finish AFTER a newer one and overwrite it with a
+                // stale image, making the showcase look frozen at an early moment.
+                if (Interlocked.CompareExchange(ref captureInProgress, 1, 0) != 0)
+                    return;
+
+                var windowHandle = _gameLauncher.CurrentEmulatorWindowHandle;
+                // Capture on a background thread — it blocks for a few seconds waiting for
+                // PCSX2 to finish writing its screenshot file, and doing that on the UI
+                // dispatcher thread would freeze the picker window for that whole time.
+                Task.Run(() => _screenshotService.Capture(runningTitle, windowHandle))
+                    .ContinueWith(_ => Interlocked.Exchange(ref captureInProgress, 0), TaskScheduler.Default);
+            }
+        };
+        timer.Start();
+
+        try
+        {
+            return await _gameLauncher.LaunchAsync(launchIntent);
+        }
+        finally
+        {
+            timer.Stop();
+        }
+    }
 
     private Task WaitForDismissAsync()
     {

@@ -36,6 +36,7 @@ public partial class App : Application
                 services.AddSingleton<IGamepadService, GamepadInputService>();
                 services.AddSingleton<ISaveStatsService, SaveStatsService>();
                 services.AddSingleton<ILocationDiscoveryService, LocationDiscoveryService>();
+                services.AddSingleton<IGameScreenshotService, GameScreenshotService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();

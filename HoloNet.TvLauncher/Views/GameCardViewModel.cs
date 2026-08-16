@@ -44,6 +44,35 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
 
     public bool ShowInitials => !HasThumbnail;
 
+    private string? _showcaseScreenshotPath;
+
+    /// <summary>
+    /// Absolute path to the most recent "where I currently am in this game" screenshot captured
+    /// when the player last quit this game (see <see cref="Services.GameScreenshotService"/>),
+    /// or <c>null</c> if none has been captured yet. Shown as a preview overlay when this card is
+    /// selected, in place of the static cover-art thumbnail.
+    /// </summary>
+    public string? ShowcaseScreenshotPath
+    {
+        get => _showcaseScreenshotPath;
+        private set
+        {
+            _showcaseScreenshotPath = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasShowcaseScreenshot));
+        }
+    }
+
+    public bool HasShowcaseScreenshot => !string.IsNullOrWhiteSpace(ShowcaseScreenshotPath);
+
+    /// <summary>
+    /// Re-reads whether a showcase screenshot exists on disk for this game, e.g. after quitting
+    /// it (a fresh capture may now exist) or on initial library load (a capture from a previous
+    /// session may already exist).
+    /// </summary>
+    public void RefreshScreenshot(Services.IGameScreenshotService screenshotService) =>
+        ShowcaseScreenshotPath = screenshotService.GetScreenshotPath(Game.Title);
+
     /// <summary>
     /// Multi-line hover-info text shown as the card's tooltip, e.g. "Bolts: 867" and
     /// "Playtime: 00:18:28". Empty when no save stats are configured/available for this game,

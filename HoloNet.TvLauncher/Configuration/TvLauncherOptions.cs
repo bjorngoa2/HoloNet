@@ -50,6 +50,25 @@ public class TvLauncherOptions
     public int QuitHoldMilliseconds { get; set; } = 1500;
 
     /// <summary>
+    /// Opt-in: when <c>true</c>, a "where I currently am" showcase screenshot is periodically
+    /// captured while a game is running (see <see cref="Services.IGameScreenshotService"/>) and
+    /// shown as the game's preview image in the picker. Defaults to <c>false</c> since capture
+    /// relies on emulator-specific workarounds (e.g. PCSX2's own screenshot hotkey) that may not
+    /// work, or may behave unexpectedly, for every emulator/game.
+    /// </summary>
+    public bool ShowcaseScreenshotEnabled { get; set; } = false;
+
+    /// <summary>
+    /// How often (in minutes) a "where I currently am" showcase screenshot is captured while a
+    /// game is running (see <see cref="Services.IGameScreenshotService"/>). Captured on a timer
+    /// rather than only at quit time, since the quit hold-combo shares its Start button with
+    /// several emulators' own pause/menu overlay — capturing then would show that menu instead
+    /// of actual gameplay. Only takes effect when <see cref="ShowcaseScreenshotEnabled"/> is
+    /// <c>true</c>.
+    /// </summary>
+    public double ShowcaseScreenshotIntervalMinutes { get; set; } = 5;
+
+    /// <summary>
     /// How many minutes of no gamepad/keyboard input before a burn-in-protection screensaver
     /// takes over the picker screen (see <see cref="ScreensaverEnabled"/>). This exists because
     /// the picker is a static, bright grid of cards left on-screen for potentially hours at a
