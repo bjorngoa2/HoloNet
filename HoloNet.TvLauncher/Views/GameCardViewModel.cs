@@ -38,6 +38,12 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
         .Take(2)
         .Select(word => char.ToUpperInvariant(word[0])));
 
+    public string? ThumbnailUrl => Game.ThumbnailUrl;
+
+    public bool HasThumbnail => !string.IsNullOrWhiteSpace(Game.ThumbnailUrl);
+
+    public bool ShowInitials => !HasThumbnail;
+
     /// <summary>
     /// Multi-line hover-info text shown as the card's tooltip, e.g. "Bolts: 867" and
     /// "Playtime: 00:18:28". Empty when no save stats are configured/available for this game,

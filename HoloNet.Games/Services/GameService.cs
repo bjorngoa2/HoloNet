@@ -11,17 +11,21 @@ public interface IGameService
     Task<IEnumerable<GameDto>> GetAllAsync(string? platform = null, int? year = null, string? genre = null);
     Task<GameDto?> GetAsync(string id);
     Task<LaunchIntentDto?> GetLaunchIntentAsync(string id);
+    Task<Stream?> OpenThumbnailReadAsync(string id);
 }
 
 public class GameService(IOptions<GameServiceOptions> options) : IGameService
 {
     private readonly GameServiceOptions _gameServiceOptions = options.Value;
 
+    private static readonly string[] ThumbnailExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public async Task<IEnumerable<GameDto>> GetAllAsync(string? platform = null, int? year = null, string? genre = null)
     {
         var directory = _gameServiceOptions.GetGameDirectory();
+        var baseUrl = _gameServiceOptions.GetBaseUrl();
 
         // Directory.EnumerateFiles has no async equivalent; offload the (potentially slow,
         // e.g. network share) scan to a background thread so it doesn't block the request thread.
@@ -52,6 +56,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
                 continue;
 
             var gameFile = FindGameFile(filePath);
+            var thumbnailFile = FindThumbnailFile(filePath);
 
             games.Add(new GameDto(
                 urlSafeId,
@@ -61,7 +66,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
                 metadata.Year,
                 metadata.Genre,
                 gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile),
-                gameFile is null ? null : new FileInfo(gameFile).Length
+                gameFile is null ? null : new FileInfo(gameFile).Length,
+                thumbnailFile is null ? null : $"{baseUrl}/{urlSafeId}/thumbnail"
             ));
         }
 
@@ -85,6 +91,7 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             return null;
 
         var gameFile = FindGameFile(filename);
+        var thumbnailFile = FindThumbnailFile(filename);
 
         return new GameDto(
             id,
@@ -94,7 +101,8 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             metadata.Year,
             metadata.Genre,
             gameFile is null ? null : _gameServiceOptions.GetNetworkPath(gameFile),
-            gameFile is null ? null : new FileInfo(gameFile).Length
+            gameFile is null ? null : new FileInfo(gameFile).Length,
+            thumbnailFile is null ? null : $"{_gameServiceOptions.GetBaseUrl()}/{id}/thumbnail"
         );
     }
 
@@ -107,6 +115,22 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
         return new LaunchIntentDto(game.Id, game.Title, game.Platform, game.NetworkPath);
     }
 
+    public Task<Stream?> OpenThumbnailReadAsync(string id)
+    {
+        var metadataFilePath = FileId.TryDecode(id);
+        if (metadataFilePath is null || !_gameServiceOptions.GetGameDirectory().Contains(metadataFilePath))
+            return Task.FromResult<Stream?>(null);
+
+        var thumbnailFile = FindThumbnailFile(metadataFilePath);
+        if (thumbnailFile is null || !File.Exists(thumbnailFile))
+            return Task.FromResult<Stream?>(null);
+
+        Stream stream = new FileStream(thumbnailFile, FileMode.Open, FileAccess.Read, FileShare.Read,
+            bufferSize: 4096, useAsync: true);
+
+        return Task.FromResult<Stream?>(stream);
+    }
+
     /// <summary>
     /// Finds the game file (ISO/CHD/etc.) sitting alongside a metadata.json sidecar.
     /// </summary>
@@ -117,6 +141,21 @@ public class GameService(IOptions<GameServiceOptions> options) : IGameService
             return null;
 
         return Directory.EnumerateFiles(directory)
-            .FirstOrDefault(x => !string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(x => !string.Equals(Path.GetExtension(x), ".json", StringComparison.OrdinalIgnoreCase)
+                && !ThumbnailExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Finds a cover-art/thumbnail image (jpg/png/webp) sitting alongside a metadata.json sidecar,
+    /// if one exists, to be served via the <c>{id}/thumbnail</c> endpoint.
+    /// </summary>
+    private static string? FindThumbnailFile(string metadataFilePath)
+    {
+        var directory = Path.GetDirectoryName(metadataFilePath);
+        if (directory is null)
+            return null;
+
+        return Directory.EnumerateFiles(directory)
+            .FirstOrDefault(x => ThumbnailExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
     }
 }

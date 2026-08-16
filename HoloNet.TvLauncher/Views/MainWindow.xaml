@@ -9,6 +9,8 @@
         KeyDown="Window_KeyDown">
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
         <Style x:Key="CardStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}" />
             <Setter Property="BorderThickness" Value="3" />
@@ -53,10 +55,15 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <Border Grid.Row="0" Background="#33344A" CornerRadius="6">
-                                    <TextBlock Text="{Binding InitialsGlyph}" FontSize="48" FontWeight="Bold"
-                                               Foreground="{StaticResource SubTextBrush}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border Grid.Row="0" Background="#33344A" CornerRadius="6" ClipToBounds="True">
+                                    <Grid>
+                                        <TextBlock Text="{Binding InitialsGlyph}" FontSize="48" FontWeight="Bold"
+                                                   Foreground="{StaticResource SubTextBrush}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Visibility="{Binding ShowInitials, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"
+                                               Visibility="{Binding HasThumbnail, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    </Grid>
                                 </Border>
 
                                 <TextBlock Grid.Row="1" Text="{Binding Title}" Foreground="{StaticResource TextBrush}"

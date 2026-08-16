@@ -78,5 +78,27 @@ app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =
     return Results.Ok(launchIntent);
 }).WithName("LaunchGame");
 
+app.MapGet("api/v1/games/{id}/thumbnail", async (IGameService service, string id) =>
+{
+    if (string.IsNullOrWhiteSpace(id))
+        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
+
+    var stream = await service.OpenThumbnailReadAsync(id);
+
+    if (stream is null)
+        return Results.NotFound();
+
+    var contentType = stream is FileStream fs
+        ? Path.GetExtension(fs.Name).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp"           => "image/webp",
+            _                 => "image/png"
+        }
+        : "image/png";
+
+    return Results.File(stream, contentType);
+}).WithName("GetGameThumbnail");
+
 
 app.Run();

@@ -8,5 +8,6 @@ public record GameDto(
     int? Year,
     string[]? Genre,
     string? NetworkPath,
-    long? FileSizeBytes
+    long? FileSizeBytes,
+    string? ThumbnailUrl
 );
