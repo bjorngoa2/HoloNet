@@ -97,3 +97,7 @@ HoloNet.Portal/ClientApp/node_modules/
 
 # Local-only config overrides (machine-specific overrides for dev/testing, never committed)
 appsettings.local.json
+
+# Auto-recorded unmapped save-file location/level IDs (see LocationDiscoveryService) — personal
+# working notes for reverse-engineering, not meant to be committed.
+discovered-locations.json
