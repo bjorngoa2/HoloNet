@@ -101,3 +101,7 @@ appsettings.local.json
 # Auto-recorded unmapped save-file location/level IDs (see LocationDiscoveryService) — personal
 # working notes for reverse-engineering, not meant to be committed.
 discovered-locations.json
+
+# Screenshot showcase captures per game (see GameScreenshotService) — personal, machine-specific.
+HoloNet.TvLauncher/Screenshots/
+HoloNet.TvLauncher/screenshot-errors.log
