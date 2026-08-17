@@ -2,10 +2,23 @@ name: holonet
 
 services:
 
+  dnsmasq:
+    image: 4km3/dnsmasq:2.90-r3
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    volumes:
+      - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - holonet
+    restart: unless-stopped
+
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      - "${NGINX_TEST_PORT:-80}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
