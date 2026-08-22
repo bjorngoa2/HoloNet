@@ -50,6 +50,14 @@ public interface IGameLauncher
     /// whole screen at the moment of capture.
     /// </summary>
     IntPtr CurrentEmulatorWindowHandle { get; }
+
+    /// <summary>
+    /// Opens <paramref name="url"/> in the system default browser and returns immediately —
+    /// unlike <see cref="LaunchAsync"/>, nothing is tracked or awaited, since a browser tab
+    /// isn't a managed emulator session with its own quit combo/lifetime. Used for the picker's
+    /// non-game shortcut tiles (see <see cref="Configuration.TvLauncherOptions.Shortcuts"/>).
+    /// </summary>
+    bool LaunchShortcut(string url);
 }
 
 /// <summary>
@@ -133,8 +141,7 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
     }
 
     public async Task<bool> QuitCurrentGameAsync()
-    {
-        var process = _currentProcess;
+    {        var process = _currentProcess;
         if (process is null || process.HasExited)
             return false;
 
@@ -176,6 +183,23 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
         {
             // Process already exited between the HasExited check and CloseMainWindow/Kill.
             return true;
+        }
+    }
+
+    public bool LaunchShortcut(string url)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            return process is not null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return false;
         }
     }
 }
