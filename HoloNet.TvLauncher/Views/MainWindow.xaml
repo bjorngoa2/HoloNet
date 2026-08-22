@@ -20,6 +20,12 @@
             <Setter Property="Width" Value="220" />
             <Setter Property="Height" Value="260" />
             <Style.Triggers>
+                <!-- Folder tiles ("Games", platform folders) get a subtle accent border even
+                     when not selected, so they read as "drill in" at a glance rather than
+                     looking like just another launchable game/shortcut card. -->
+                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                    <Setter Property="BorderBrush" Value="#5A7AA8" />
+                </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{StaticResource CardSelectedBrush}" />
                     <Setter Property="Background" Value="#26263A" />
@@ -35,7 +41,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="HoloNet — Game Library" Foreground="{StaticResource TextBrush}"
+        <TextBlock x:Name="HeaderText" Grid.Row="0" Text="HoloNet — Home" Foreground="{StaticResource TextBrush}"
                    FontSize="32" FontWeight="Bold" Margin="32,24,32,12" />
 
         <ScrollViewer Grid.Row="1" x:Name="GridScrollViewer" VerticalScrollBarVisibility="Auto" Margin="20,0">
@@ -69,11 +75,8 @@
                                 <TextBlock Grid.Row="1" Text="{Binding Title}" Foreground="{StaticResource TextBrush}"
                                            FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,2" />
 
-                                <TextBlock Grid.Row="2" Foreground="{StaticResource SubTextBrush}" FontSize="12">
-                                    <Run Text="{Binding Platform, Mode=OneWay}" />
-                                    <Run Text=" · " />
-                                    <Run Text="{Binding YearText, Mode=OneWay}" />
-                                </TextBlock>
+                                <TextBlock Grid.Row="2" Foreground="{StaticResource SubTextBrush}" FontSize="12"
+                                           Text="{Binding Subtitle, Mode=OneWay}" />
                             </Grid>
                         </Border>
                     </DataTemplate>

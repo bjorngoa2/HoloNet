@@ -27,7 +27,11 @@ public partial class MainWindow : Window
     private readonly IGameScreenshotService _screenshotService;
     private readonly TvLauncherOptions _options;
 
-    private readonly List<GameCardViewModel> _cards = [];
+    private readonly List<IPickerCard> _cards = [];
+    private readonly List<GameCardViewModel> _allGameCards = [];
+    private readonly Stack<NavFrame> _navigationStack = new();
+    private FolderCardViewModel? _currentFolder;
+    private string _headerTitle = "Home";
     private int _selectedIndex;
     private bool _isBusy;
 
@@ -39,6 +43,13 @@ public partial class MainWindow : Window
     private double _logoY;
     private double _logoVelocityX = ScreensaverLogoSpeedPixelsPerSecond;
     private double _logoVelocityY = ScreensaverLogoSpeedPixelsPerSecond;
+
+    /// <summary>
+    /// Snapshot of a screen pushed onto <see cref="_navigationStack"/> when descending into a
+    /// folder (see <see cref="EnterFolder"/>), so <see cref="GoBack"/> can restore exactly what
+    /// was on screen (including the previously-selected card) rather than rebuilding it.
+    /// </summary>
+    private sealed record NavFrame(string HeaderTitle, List<IPickerCard> Cards, int SelectedIndex, FolderCardViewModel? Folder);
 
     public MainWindow(
         IGamesApiClient gamesApiClient,
@@ -64,7 +75,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) =>
         {
             _gamepadService.AttachWindowHandle(new WindowInteropHelper(this).Handle);
-            await LoadGamesAsync();
+            await RefreshAsync();
             _gamepadService.Start();
             if (_options.ScreensaverEnabled)
                 _idleCheckTimer.Start();
@@ -78,33 +89,142 @@ public partial class MainWindow : Window
         };
     }
 
-    private async Task LoadGamesAsync()
+    /// <summary>
+    /// (Re)fetches the game library and rebuilds whichever screen is currently on display: the
+    /// root screen (Games folder + shortcuts) if not inside a folder, or just the current
+    /// folder's contents if browsing one (see <see cref="EnterFolder"/>) — refreshing never
+    /// bounces the player back out to the root screen.
+    /// </summary>
+    private async Task RefreshAsync()
     {
-        SetStatus("Loading game library…");
+        SetStatus("Loading…");
 
         try
         {
             var games = await _gamesApiClient.GetGamesAsync();
-            _cards.Clear();
-            _cards.AddRange(games.Select(g =>
+            _allGameCards.Clear();
+            _allGameCards.AddRange(games.Select(g =>
             {
                 var card = new GameCardViewModel(g, _saveStatsService.GetStats(g.Title));
                 if (_options.ShowcaseScreenshotEnabled)
                     card.RefreshScreenshot(_screenshotService);
                 return card;
             }));
-            GamesItemsControl.ItemsSource = _cards;
 
-            _selectedIndex = _cards.Count > 0 ? 0 : -1;
-            UpdateSelection();
-            SetStatus(_cards.Count == 0
-                ? "No games found. Press Start to refresh."
-                : "D-pad/stick: move · A: play · Start: refresh · Hold Back+Start while playing: quit");
+            if (_currentFolder is null)
+            {
+                _navigationStack.Clear();
+                ShowRootScreen();
+            }
+            else
+            {
+                // The current folder's children factory reads live from _allGameCards, so
+                // re-invoking it after the fetch above already reflects the fresh data — no
+                // need to rebuild the whole navigation path from scratch.
+                _cards.Clear();
+                _cards.AddRange(_currentFolder.GetChildren());
+                ApplyCards();
+            }
         }
         catch (Exception ex)
         {
             SetStatus($"Could not reach the Games API: {ex.Message}. Press Start to retry.");
         }
+    }
+
+    private void ShowRootScreen()
+    {
+        _currentFolder = null;
+        _headerTitle = "Home";
+
+        var gamesFolder = new FolderCardViewModel(
+            "Games",
+            $"{_allGameCards.Count} game{(_allGameCards.Count == 1 ? "" : "s")}",
+            BuildPlatformFolders);
+
+        _cards.Clear();
+        _cards.Add(gamesFolder);
+        _cards.AddRange(_options.Shortcuts.Select(s => (IPickerCard)new ShortcutCardViewModel(s)));
+
+        ApplyCards();
+    }
+
+    private List<IPickerCard> BuildPlatformFolders() =>
+        _allGameCards
+            .GroupBy(c => c.Platform, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => DisplayNameForPlatform(g.Key), StringComparer.OrdinalIgnoreCase)
+            .Select(g => (IPickerCard)new FolderCardViewModel(
+                DisplayNameForPlatform(g.Key),
+                $"{g.Count()} game{(g.Count() == 1 ? "" : "s")}",
+                () => g.Cast<IPickerCard>().ToList()))
+            .ToList();
+
+    private string DisplayNameForPlatform(string platform) =>
+        _options.PlatformDisplayNames.TryGetValue(platform, out var displayName) ? displayName : platform;
+
+    private void EnterFolder(FolderCardViewModel folder)
+    {
+        _navigationStack.Push(new NavFrame(_headerTitle, [.. _cards], _selectedIndex, _currentFolder));
+
+        _currentFolder = folder;
+        _headerTitle = folder.Title;
+        _cards.Clear();
+        _cards.AddRange(folder.GetChildren());
+
+        ApplyCards();
+    }
+
+    private void GoBack()
+    {
+        if (_navigationStack.Count == 0)
+            return;
+
+        var frame = _navigationStack.Pop();
+        _currentFolder = frame.Folder;
+        _headerTitle = frame.HeaderTitle;
+        _cards.Clear();
+        _cards.AddRange(frame.Cards);
+
+        SetItemsSource();
+        _selectedIndex = _cards.Count > 0 ? Math.Clamp(frame.SelectedIndex, 0, _cards.Count - 1) : -1;
+        UpdateSelection();
+        UpdateHeaderAndStatus();
+    }
+
+    /// <summary>
+    /// Pushes <see cref="_cards"/> to the UI and refreshes selection/header/status text — the
+    /// common tail end of showing any screen (root, entering a folder, or a folder refresh).
+    /// </summary>
+    private void ApplyCards()
+    {
+        SetItemsSource();
+        _selectedIndex = _cards.Count > 0 ? 0 : -1;
+        UpdateSelection();
+        UpdateHeaderAndStatus();
+    }
+
+    /// <summary>
+    /// Re-points <see cref="GamesItemsControl"/> at <see cref="_cards"/>. <c>_cards</c> is one
+    /// mutable list reused for every screen (root, a folder's contents, going back) rather than
+    /// a fresh list per screen — but WPF's <c>ItemsSource</c> only regenerates the grid when the
+    /// assigned reference actually changes, so reassigning the same reference after mutating it
+    /// is silently ignored. Clearing to <c>null</c> first forces a genuine reference change on
+    /// every call so the grid always picks up the new contents.
+    /// </summary>
+    private void SetItemsSource()
+    {
+        GamesItemsControl.ItemsSource = null;
+        GamesItemsControl.ItemsSource = _cards;
+    }
+
+    private void UpdateHeaderAndStatus()
+    {
+        HeaderText.Text = $"HoloNet — {_headerTitle}";
+
+        var backHint = _navigationStack.Count > 0 ? " · B: back" : "";
+        SetStatus(_cards.Count == 0
+            ? $"Nothing here. Press Start to refresh.{backHint}"
+            : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}");
     }
 
     private void SetStatus(string message) => StatusText.Text = message;
@@ -119,7 +239,9 @@ public partial class MainWindow : Window
 
     private void UpdateSaveInfo()
     {
-        var selected = _selectedIndex >= 0 && _selectedIndex < _cards.Count ? _cards[_selectedIndex] : null;
+        var selected = _selectedIndex >= 0 && _selectedIndex < _cards.Count
+            ? _cards[_selectedIndex] as GameCardViewModel
+            : null;
         if (selected is not null && selected.HasSaveStats)
         {
             SaveInfoText.Text = $"{selected.Title}\n{selected.SaveStatsText}";
@@ -207,7 +329,9 @@ public partial class MainWindow : Window
         if (_cards.Count == 0)
         {
             if (button == GamepadButton.Refresh)
-                await LoadGamesAsync();
+                await RefreshAsync();
+            else if (button == GamepadButton.Cancel)
+                GoBack();
             return;
         }
 
@@ -231,9 +355,10 @@ public partial class MainWindow : Window
                 await LaunchSelectedAsync();
                 break;
             case GamepadButton.Refresh:
-                await LoadGamesAsync();
+                await RefreshAsync();
                 break;
             case GamepadButton.Cancel:
+                GoBack();
                 break;
         }
     }
@@ -253,7 +378,27 @@ public partial class MainWindow : Window
         if (_selectedIndex < 0 || _selectedIndex >= _cards.Count)
             return;
 
-        var game = _cards[_selectedIndex].Game;
+        if (_cards[_selectedIndex] is FolderCardViewModel folder)
+        {
+            EnterFolder(folder);
+            return;
+        }
+
+        if (_cards[_selectedIndex] is ShortcutCardViewModel shortcut)
+        {
+            if (!_gameLauncher.LaunchShortcut(shortcut.Shortcut.Url))
+            {
+                ShowOverlay($"Couldn't open \"{shortcut.Title}\".\n\nPress A to dismiss.");
+                await WaitForDismissAsync();
+                HideOverlay();
+            }
+            return;
+        }
+
+        if (_cards[_selectedIndex] is not GameCardViewModel gameCard)
+            return;
+
+        var game = gameCard.Game;
 
         _isBusy = true;
         ShowOverlay($"Launching {game.Title}…");
@@ -278,9 +423,9 @@ public partial class MainWindow : Window
             // The save file is only updated once the emulator process has actually exited, so
             // refresh this card's stats now (rather than the stale copy fetched at library load)
             // and refresh the on-screen panel if this card is still the selected one.
-            _cards[_selectedIndex].SaveStats = _saveStatsService.GetStats(game.Title);
+            gameCard.SaveStats = _saveStatsService.GetStats(game.Title);
             if (_options.ShowcaseScreenshotEnabled)
-                _cards[_selectedIndex].RefreshScreenshot(_screenshotService);
+                gameCard.RefreshScreenshot(_screenshotService);
             UpdateSaveInfo();
         }
         finally
