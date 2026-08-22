@@ -108,6 +108,45 @@ public class TvLauncherOptions
     /// ambiguous for a specific game).
     /// </summary>
     public Dictionary<string, SaveStatsMapping> SaveStats { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Non-game "launch a browser to this URL" tiles shown alongside the game grid, e.g. links
+    /// to <c>videos.goa.no</c>, <c>photos.goa.no</c>, or a streaming service. Lets the picker
+    /// act as a general TV home menu without TvLauncher taking on any responsibility beyond
+    /// "open this URL in the default browser" — unlike games, no process is tracked/awaited and
+    /// there's no quit combo, since the browser isn't a managed emulator session.
+    /// </summary>
+    public List<ShortcutMapping> Shortcuts { get; set; } = new();
+
+    /// <summary>
+    /// Maps a game's raw <c>Platform</c> string (as returned by the Games API, e.g. "PS2") to a
+    /// nicer display name shown on the platform folder tile in the picker (e.g. "PlayStation 2").
+    /// Platforms not listed here just show their raw string as-is.
+    /// </summary>
+    public Dictionary<string, string> PlatformDisplayNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// A single non-game shortcut tile (see <see cref="TvLauncherOptions.Shortcuts"/>).
+/// </summary>
+public class ShortcutMapping
+{
+    /// <summary>
+    /// Display title shown on the tile, e.g. "Videos".
+    /// </summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL opened in the system default browser when the tile is launched, e.g.
+    /// "http://videos.goa.no".
+    /// </summary>
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional logo/icon image URL for the tile; falls back to a two-letter initials glyph
+    /// (same as game cards without cover art) when not set.
+    /// </summary>
+    public string? ThumbnailUrl { get; set; }
 }
 
 /// <summary>
