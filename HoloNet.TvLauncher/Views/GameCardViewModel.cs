@@ -7,7 +7,7 @@ namespace HoloNet.TvLauncher.Views;
 /// <summary>
 /// Presentation wrapper around <see cref="GameDto"/> for binding in the picker grid.
 /// </summary>
-public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INotifyPropertyChanged
+public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : IPickerCard
 {
     private bool _isSelected;
 
@@ -33,6 +33,8 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
 
     public string YearText => Game.Year?.ToString() ?? string.Empty;
 
+    public string Subtitle => string.IsNullOrEmpty(YearText) ? Platform : $"{Platform} · {YearText}";
+
     public string InitialsGlyph => string.Concat(Game.Title
         .Split(' ', StringSplitOptions.RemoveEmptyEntries)
         .Take(2)
@@ -43,6 +45,8 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : INot
     public bool HasThumbnail => !string.IsNullOrWhiteSpace(Game.ThumbnailUrl);
 
     public bool ShowInitials => !HasThumbnail;
+
+    public bool IsFolder => false;
 
     private string? _showcaseScreenshotPath;
 
