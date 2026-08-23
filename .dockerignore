@@ -1,0 +1,31 @@
+# Keeps Docker build contexts small and avoids leaking local/dev-only files
+# into images. The compose build context for every service is the repo root
+# (see docker-compose.yml's `context: .`), so without this file, every build
+# would upload git history, all projects' bin/obj folders, node_modules, and
+# actual media libraries under data/ — multiple GB of irrelevant data on
+# every build.
+
+.git/
+.github/
+.idea/
+.claude/
+
+**/bin/
+**/obj/
+**/node_modules/
+
+# Local/dev-only data and config — never needed inside an image; media is
+# always mounted at runtime via docker-compose.yml's volumes instead.
+# (**/ so this also catches HoloNet.Games/data/, not just the repo-root one.)
+**/data/
+**/appsettings.Development.json
+**/appsettings.local.json
+
+# TV launcher is a Windows desktop client, never containerized.
+HoloNet.TvLauncher/
+
+# Misc local artifacts that shouldn't end up in build contexts.
+*.md
+*.psu
+*.png
+docs/

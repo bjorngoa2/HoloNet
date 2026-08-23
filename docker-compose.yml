@@ -22,7 +22,6 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - holonet-portal
       - holonet-video
       - holonet-photos
       - holonet-games
@@ -30,16 +29,9 @@ services:
       - holonet
     restart: unless-stopped
 
-  holonet-portal:
-    image: ghcr.io/bjorngoa2/holonet-portal:${IMAGE_TAG:-latest}
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - Portal__VideoUrl=http://videos.goa.no
-      - Portal__PhotosUrl=http://photos.goa.no
-      - Portal__GamesUrl=http://games.goa.no
-    networks:
-      - holonet
-    restart: unless-stopped
+  # holonet-portal is currently excluded from releases/deployment — HoloNet is used via
+  # TvLauncher, so the Portal web dashboard isn't needed yet. Re-add once its ClientApp
+  # frontend is finished and portal is re-added to release.yml's build matrix.
 
   holonet-video:
     image: ghcr.io/bjorngoa2/holonet-video:${IMAGE_TAG:-latest}

@@ -19,7 +19,10 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [portal, video, photos, games]
+        # Portal (React/Vite dashboard) is excluded for now — HoloNet is used via TvLauncher,
+        # so Portal isn't needed for a working release. Re-add "portal" here once its
+        # ClientApp frontend is ready to ship.
+        service: [video, photos, games]
     steps:
       - uses: actions/checkout@v4
 

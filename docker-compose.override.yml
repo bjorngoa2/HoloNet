@@ -1,0 +1,28 @@
+name: holonet
+
+# Local development/testing override: builds images from source instead of pulling the
+# published ghcr.io tags. Use alongside the base compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up --build
+#
+# Compose allows `build:` and `image:` on the same service — it builds locally and tags the
+# result with the `image:` name from docker-compose.yml, so this keeps the "day to day" inner
+# loop (edit code, rebuild, test on the server) working exactly as before, while
+# docker-compose.yml alone (no override) is what you run in production, pinned to a specific
+# released IMAGE_TAG pulled from ghcr.io.
+
+services:
+  holonet-video:
+    build:
+      context: .
+      dockerfile: HoloNet.Video/Dockerfile
+
+  holonet-photos:
+    build:
+      context: .
+      dockerfile: HoloNet.Photos/Dockerfile
+
+  holonet-games:
+    build:
+      context: .
+      dockerfile: HoloNet.Games/Dockerfile
