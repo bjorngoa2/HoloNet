@@ -1,3 +1,5 @@
+using HoloNet.Shared.Helpers;
+
 namespace HoloNet.Games.Services;
 
 /// <summary>
@@ -6,22 +8,23 @@ namespace HoloNet.Games.Services;
 /// <see cref="GameService"/> (which extensions to look for on disk) and the
 /// <c>api/v1/games/{id}/thumbnail</c> endpoint (which content-type to serve) — keeping both
 /// concerns in one place means adding/removing a supported image format can't cause the two to
-/// drift out of sync (a Shotgun Surgery risk otherwise).
+/// drift out of sync (a Shotgun Surgery risk otherwise). Built on the shared
+/// <see cref="ContentTypeMap"/> lookup/fallback behavior used identically by
+/// HoloNet.Video and HoloNet.Photos.
 /// </summary>
 public static class ThumbnailFormat
 {
-    private static readonly Dictionary<string, string> ContentTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly ContentTypeMap Map = new(new Dictionary<string, string>
     {
         [".jpg"] = "image/jpeg",
         [".jpeg"] = "image/jpeg",
         [".png"] = "image/png",
         [".webp"] = "image/webp"
-    };
+    }, fallbackContentType: "image/png");
 
-    public static bool IsThumbnail(string filePath) =>
-        ContentTypesByExtension.ContainsKey(Path.GetExtension(filePath));
+    public static bool IsThumbnail(string filePath) => Map.IsSupported(filePath);
 
     /// <summary>Falls back to <c>image/png</c> for an unrecognized/missing extension.</summary>
-    public static string GetContentType(string filePath) =>
-        ContentTypesByExtension.GetValueOrDefault(Path.GetExtension(filePath), "image/png");
+    public static string GetContentType(string filePath) => Map.GetContentType(filePath);
 }
+
