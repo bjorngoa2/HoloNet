@@ -1,3 +1,5 @@
+using HoloNet.Shared.Helpers;
+
 namespace HoloNet.Photos.Services;
 
 /// <summary>
@@ -6,11 +8,13 @@ namespace HoloNet.Photos.Services;
 /// <see cref="PhotoService"/> (which extensions to scan for; <c>.bmp</c> was missing) and the
 /// <c>{id}/image</c> endpoint in Program.cs (which content-type to serve; <c>.bmp</c> was
 /// supported there but <c>.png</c> had no explicit case). Keeping both concerns in one place
-/// means adding/removing a supported image format can't cause them to drift apart again.
+/// means adding/removing a supported image format can't cause them to drift apart again. Built
+/// on the shared <see cref="ContentTypeMap"/> lookup/fallback behavior used identically by
+/// HoloNet.Games and HoloNet.Video.
 /// </summary>
 public static class PhotoContentTypes
 {
-    private static readonly Dictionary<string, string> ContentTypesByExtension = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly ContentTypeMap Map = new(new Dictionary<string, string>
     {
         [".png"] = "image/png",
         [".jpg"] = "image/jpeg",
@@ -18,12 +22,11 @@ public static class PhotoContentTypes
         [".gif"] = "image/gif",
         [".webp"] = "image/webp",
         [".bmp"] = "image/bmp"
-    };
+    }, fallbackContentType: "image/png");
 
-    public static bool IsSupported(string filePath) =>
-        ContentTypesByExtension.ContainsKey(Path.GetExtension(filePath));
+    public static bool IsSupported(string filePath) => Map.IsSupported(filePath);
 
     /// <summary>Falls back to <c>image/png</c> for an unrecognized extension.</summary>
-    public static string GetContentType(string filePathOrExtension) =>
-        ContentTypesByExtension.GetValueOrDefault(Path.GetExtension(filePathOrExtension), "image/png");
+    public static string GetContentType(string filePathOrExtension) => Map.GetContentType(filePathOrExtension);
 }
+
