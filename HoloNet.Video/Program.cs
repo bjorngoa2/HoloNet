@@ -1,11 +1,16 @@
 using HoloNet.Shared.Filters;
 using HoloNet.Shared.HealthChecks;
+using HoloNet.Shared.Helpers;
 using HoloNet.Video.Configuration;
 using HoloNet.Video.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<VideoServiceOptions>(builder.Configuration.GetSection("VideoService"));
+builder.Services.AddOptions<VideoServiceOptions>()
+    .Bind(builder.Configuration.GetSection("VideoService"))
+    .Validate(o => OptionsValidation.IsValid(() => o.GetVideoDirectory()), "VideoService:VideoPath must point to an existing directory.")
+    .Validate(o => OptionsValidation.IsValid(() => o.GetBaseUrl()), "VideoService:BaseUrl must be a valid absolute http/https URL.")
+    .ValidateOnStart();
 
 builder.Services.AddScoped<IVideoService, VideoService>();
 

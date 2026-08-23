@@ -2,10 +2,15 @@ using HoloNet.Photos.Configuration;
 using HoloNet.Photos.Services;
 using HoloNet.Shared.Filters;
 using HoloNet.Shared.HealthChecks;
+using HoloNet.Shared.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<PhotoServiceOptions>(builder.Configuration.GetSection("PhotoService"));
+builder.Services.AddOptions<PhotoServiceOptions>()
+    .Bind(builder.Configuration.GetSection("PhotoService"))
+    .Validate(o => OptionsValidation.IsValid(() => o.GetPhotoDirectory()), "PhotoService:PhotoPath must point to an existing directory.")
+    .Validate(o => OptionsValidation.IsValid(() => o.GetBaseUrl()), "PhotoService:BaseUrl must be a valid absolute http/https URL.")
+    .ValidateOnStart();
 
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 

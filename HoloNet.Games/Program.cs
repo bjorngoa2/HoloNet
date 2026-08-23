@@ -2,6 +2,7 @@ using HoloNet.Games.Configuration;
 using HoloNet.Games.Services;
 using HoloNet.Shared.Filters;
 using HoloNet.Shared.HealthChecks;
+using HoloNet.Shared.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,7 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 // local paths without touching the committed appsettings.json/appsettings.Development.json.
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
 
-builder.Services.Configure<GameServiceOptions>(builder.Configuration.GetSection("GameService"));
+builder.Services.AddOptions<GameServiceOptions>()
+    .Bind(builder.Configuration.GetSection("GameService"))
+    .Validate(o => OptionsValidation.IsValid(() => o.GetGameDirectory()), "GameService:GamePath must point to an existing directory.")
+    .Validate(o => OptionsValidation.IsValid(() => o.GetBaseUrl()), "GameService:BaseUrl must be a valid absolute http/https URL.")
+    .ValidateOnStart();
 
 builder.Services.AddScoped<IGameService, GameService>();
 
