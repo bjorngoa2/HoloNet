@@ -20,12 +20,9 @@
             <Setter Property="Width" Value="220" />
             <Setter Property="Height" Value="260" />
             <Style.Triggers>
-                <!-- Folder tiles ("Games", platform folders) get a subtle accent border even
-                     when not selected, so they read as "drill in" at a glance rather than
-                     looking like just another launchable game/shortcut card. -->
-                <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                    <Setter Property="BorderBrush" Value="#5A7AA8" />
-                </DataTrigger>
+                <!-- Folder tiles ("Games", platform folders) are already distinguished from
+                     game/shortcut tiles by their 📁 glyph (see FolderCardViewModel.InitialsGlyph),
+                     so they don't need a separate always-on border treatment too. -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="BorderBrush" Value="{StaticResource CardSelectedBrush}" />
                     <Setter Property="Background" Value="#26263A" />
