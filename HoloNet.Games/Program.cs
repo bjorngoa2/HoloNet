@@ -47,9 +47,6 @@ app.MapGet("api/v1/games", async (IGameService service, string? platform, int? y
 
 app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var game = await service.GetAsync(id);
 
     if (game is null)
@@ -58,13 +55,10 @@ app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
     }
 
     return Results.Ok(game);
-}).WithName("GetGame");
+}).WithName("GetGame").AddEndpointFilter<RequireGameIdFilter>();
 
 app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var game = await service.GetAsync(id);
     if (game is null)
         return Results.NotFound();
@@ -76,29 +70,37 @@ app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =
             statusCode: StatusCodes.Status409Conflict);
 
     return Results.Ok(launchIntent);
-}).WithName("LaunchGame");
+}).WithName("LaunchGame").AddEndpointFilter<RequireGameIdFilter>();
 
 app.MapGet("api/v1/games/{id}/thumbnail", async (IGameService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var stream = await service.OpenThumbnailReadAsync(id);
 
     if (stream is null)
         return Results.NotFound();
 
-    var contentType = stream is FileStream fs
-        ? Path.GetExtension(fs.Name).ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".webp"           => "image/webp",
-            _                 => "image/png"
-        }
-        : "image/png";
+    var contentType = stream is FileStream fs ? ThumbnailFormat.GetContentType(fs.Name) : "image/png";
 
     return Results.File(stream, contentType);
-}).WithName("GetGameThumbnail");
+}).WithName("GetGameThumbnail").AddEndpointFilter<RequireGameIdFilter>();
 
 
 app.Run();
+
+/// <summary>
+/// Rejects a request with a 400 Problem response if its <c>{id}</c> route parameter is
+/// missing/whitespace, before the endpoint handler runs. Consolidates the same guard that used
+/// to be copy-pasted at the top of every <c>{id}</c>-based endpoint above.
+/// </summary>
+internal sealed class RequireGameIdFilter : IEndpointFilter
+{
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var id = context.GetArgument<string>(1);
+        if (string.IsNullOrWhiteSpace(id))
+            return ValueTask.FromResult<object?>(
+                Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest));
+
+        return next(context);
+    }
+}
