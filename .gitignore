@@ -105,3 +105,7 @@ discovered-locations.json
 # Screenshot showcase captures per game (see GameScreenshotService) — personal, machine-specific.
 HoloNet.TvLauncher/Screenshots/
 HoloNet.TvLauncher/screenshot-errors.log
+
+# Reference PDFs (design patterns / refactoring material downloaded for personal study —
+# not project-related, not meant to be committed).
+practices/**/*.pdf
