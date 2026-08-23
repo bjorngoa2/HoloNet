@@ -33,6 +33,8 @@ public class ShortcutCardViewModel(ShortcutMapping shortcut) : IPickerCard
 
     public bool IsFolder => false;
 
+    public TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitShortcut(this);
+
     public bool IsSelected
     {
         get => _isSelected;
