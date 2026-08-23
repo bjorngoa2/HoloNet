@@ -43,9 +43,6 @@ app.MapGet("api/v1/videos", async (IVideoService service) =>
 
 app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Video id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var videoMetadata = await service.GetAsync(id);
 
     if (videoMetadata is null)
@@ -54,32 +51,39 @@ app.MapGet("api/v1/videos/{id}", async (IVideoService service, string id) =>
     }
 
     return Results.Ok(videoMetadata);
-}).WithName("GetVideo");
+}).WithName("GetVideo").AddEndpointFilter<RequireVideoIdFilter>();
 
 app.MapGet("api/v1/videos/{id}/stream", async (string id, IVideoService service) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Video id is required.", statusCode: StatusCodes.Status400BadRequest);
+    var video = await service.GetStreamAsync(id);
 
-    var stream = await service.GetStreamAsync(id);
-
-    if (stream == null)
+    if (video is null)
     {
         return Results.NotFound();
     }
 
-    var video = await service.GetAsync(id);
-    var contentType = video?.Extension.ToLowerInvariant() switch
-    {
-        ".mp4" => "video/mp4",
-        ".mkv" => "video/x-matroska",
-        ".avi" => "video/x-msvideo",
-        ".mov" => "video/quicktime",
-        _ => "application/octet-stream"
-    };
+    return Results.File(video.Stream, VideoFileTypes.GetContentType(video.Extension), enableRangeProcessing: true);
 
-    return Results.File(stream, contentType, enableRangeProcessing: true);
-    
-}).WithName("GetVideoStream");
+}).WithName("GetVideoStream").AddEndpointFilter<RequireVideoIdFilter>();
 
 app.Run();
+
+/// <summary>
+/// Rejects a request with a 400 Problem response if its <c>{id}</c> route parameter is
+/// missing/whitespace, before the endpoint handler runs. Consolidates the same guard that used
+/// to be copy-pasted at the top of every <c>{id}</c>-based endpoint above. Reads the id via the
+/// route value (rather than a fixed argument index) since <c>GetVideo</c> and
+/// <c>GetVideoStream</c> declare their <c>id</c> parameter in different positions.
+/// </summary>
+internal sealed class RequireVideoIdFilter : IEndpointFilter
+{
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var id = context.HttpContext.Request.RouteValues["id"] as string;
+        if (string.IsNullOrWhiteSpace(id))
+            return ValueTask.FromResult<object?>(
+                Results.Problem("Video id is required.", statusCode: StatusCodes.Status400BadRequest));
+
+        return next(context);
+    }
+}
