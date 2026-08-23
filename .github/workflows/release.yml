@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  # ghcr.io requires lowercase image names; github.repository_owner is already lowercase for
+  # this org/user, but this normalizes it in case that ever changes.
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  publish-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [portal, video, photos, games]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          service="${{ matrix.service }}"
+          # e.g. "video" -> "HoloNet.Video" to match the Dockerfile/project naming convention.
+          project="HoloNet.${service^}"
+          echo "project=$project" >> "$GITHUB_OUTPUT"
+          echo "name=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/holonet-$service" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.image.outputs.project }}/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:latest
+
+  publish-tvlauncher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish TvLauncher (self-contained, win-x64)
+        run: >
+          dotnet publish HoloNet.TvLauncher/HoloNet.TvLauncher.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -o publish/TvLauncher
+
+      - name: Zip published output
+        shell: pwsh
+        run: Compress-Archive -Path publish/TvLauncher/* -DestinationPath HoloNet.TvLauncher-${{ github.ref_name }}.zip
+
+      - name: Upload artifact for release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: tvlauncher-zip
+          path: HoloNet.TvLauncher-${{ github.ref_name }}.zip
+
+  create-release:
+    needs: [publish-images, publish-tvlauncher]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tvlauncher-zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: HoloNet.TvLauncher-*.zip
