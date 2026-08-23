@@ -43,9 +43,6 @@ app.MapGet("api/v1/photos", async (IPhotoService service) =>
 
 app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var photoMetadata = await service.GetAsync(id);
 
     if (photoMetadata is null)
@@ -54,31 +51,37 @@ app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
     }
 
     return Results.Ok(photoMetadata);
-}).WithName("GetPhoto");
+}).WithName("GetPhoto").AddEndpointFilter<RequirePhotoIdFilter>();
 
 app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) =>
 {
-    if (string.IsNullOrWhiteSpace(id))
-        return Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest);
-
     var stream = await service.OpenReadAsync(id);
 
     if (stream is null)
         return Results.NotFound();
 
-    var contentType = stream is FileStream fs
-        ? Path.GetExtension(fs.Name).ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".gif"            => "image/gif",
-            ".webp"           => "image/webp",
-            ".bmp"            => "image/bmp",
-            _                 => "image/png"
-        }
-        : "image/png";
+    var contentType = stream is FileStream fs ? PhotoContentTypes.GetContentType(fs.Name) : "image/png";
 
     return Results.File(stream, contentType);
-}).WithName("GetPhotoImage");
+}).WithName("GetPhotoImage").AddEndpointFilter<RequirePhotoIdFilter>();
 
 
 app.Run();
+
+/// <summary>
+/// Rejects a request with a 400 Problem response if its <c>{id}</c> route parameter is
+/// missing/whitespace, before the endpoint handler runs. Consolidates the same guard that used
+/// to be copy-pasted at the top of every <c>{id}</c>-based endpoint above.
+/// </summary>
+internal sealed class RequirePhotoIdFilter : IEndpointFilter
+{
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var id = context.HttpContext.Request.RouteValues["id"] as string;
+        if (string.IsNullOrWhiteSpace(id))
+            return ValueTask.FromResult<object?>(
+                Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest));
+
+        return next(context);
+    }
+}
