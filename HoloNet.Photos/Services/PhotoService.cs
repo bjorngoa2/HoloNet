@@ -18,58 +18,61 @@ public class PhotoService(IOptions<PhotoServiceOptions> options) : IPhotoService
 
     public Task<IEnumerable<PhotoDto>> GetAllAsync()
     {
-        string[] validExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
-
         var directory = _photoServiceOptions.GetPhotoDirectory();
-        var baseUrl = _photoServiceOptions.GetBaseUrl();
 
         // Directory.EnumerateFiles has no async equivalent; offload the (potentially slow,
         // e.g. network share) scan to a background thread so it doesn't block the request thread.
         return Task.Run<IEnumerable<PhotoDto>>(() =>
         {
             var fileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
-                .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
+                .Where(PhotoContentTypes.IsSupported);
 
             List<PhotoDto> photos = [];
             foreach (var filename in fileNames)
-            {
-                var fileInfo = new FileInfo(filename);
-                var urlSafeId = FileId.Encode(filename);
-                var imageUrl = $"{baseUrl}/{urlSafeId}/image";
-
-                photos.Add(new PhotoDto(urlSafeId, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-                    fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl));
-            }
+                photos.Add(BuildDto(FileId.Encode(filename), filename));
 
             return photos;
         });
     }
 
-    public Task<PhotoDto?> GetAsync(string id)
+    /// <summary>
+    /// Resolves a photo id to its absolute file path, or <c>null</c> if the id is malformed,
+    /// doesn't decode to a path within <see cref="PhotoServiceOptions.GetPhotoDirectory"/> (the
+    /// path-traversal guard shared by every endpoint that accepts a photo id), or the file no
+    /// longer exists.
+    /// </summary>
+    private string? ResolveFilePath(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null || !_photoServiceOptions.GetPhotoDirectory().Contains(filename))
-            return Task.FromResult<PhotoDto?>(null);
+        return filename is not null && _photoServiceOptions.GetPhotoDirectory().Contains(filename) && File.Exists(filename)
+            ? filename
+            : null;
+    }
 
-        if (!File.Exists(filename))
-            return Task.FromResult<PhotoDto?>(null);
-
+    /// <summary>
+    /// Builds the API-facing <see cref="PhotoDto"/> for a photo whose id has already been
+    /// resolved to a file path. Shared by <see cref="GetAllAsync"/> and <see cref="GetAsync"/>
+    /// so the mapping from file metadata to DTO can't drift between them.
+    /// </summary>
+    private PhotoDto BuildDto(string id, string filename)
+    {
         var fileInfo = new FileInfo(filename);
-        var readUrl = $"{_photoServiceOptions.GetBaseUrl()}/{FileId.Encode(filename)}/image";
+        var imageUrl = $"{_photoServiceOptions.GetBaseUrl()}/{id}/image";
 
-        var photoMetadata = new PhotoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
-            fileInfo.LastWriteTimeUtc, fileInfo.Length, readUrl);
+        return new PhotoDto(id, fileInfo.Name, fileInfo.Extension, fileInfo.CreationTimeUtc,
+            fileInfo.LastWriteTimeUtc, fileInfo.Length, imageUrl);
+    }
 
-        return Task.FromResult<PhotoDto?>(photoMetadata);
+    public Task<PhotoDto?> GetAsync(string id)
+    {
+        var filename = ResolveFilePath(id);
+        return Task.FromResult(filename is null ? null : BuildDto(id, filename));
     }
 
     public Task<Stream?> OpenReadAsync(string id)
     {
-        var filename = FileId.TryDecode(id);
-        if (filename is null || !_photoServiceOptions.GetPhotoDirectory().Contains(filename))
-            return Task.FromResult<Stream?>(null);
-
-        if (!File.Exists(filename))
+        var filename = ResolveFilePath(id);
+        if (filename is null)
             return Task.FromResult<Stream?>(null);
 
         Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
