@@ -23,7 +23,7 @@ var app = builder.Build();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
-app.MapHealthChecks("api/v1/health");
+app.MapHealthChecks("api/v1/health").WithName("HealthCheck");
 
 if (app.Environment.IsDevelopment())
 {

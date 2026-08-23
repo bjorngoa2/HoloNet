@@ -4,17 +4,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection("Portal"));
 builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-app.MapHealthChecks("api/v1/health");
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+
+app.MapHealthChecks("api/v1/health").WithName("HealthCheck");
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
+app.UseHttpsRedirection();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
