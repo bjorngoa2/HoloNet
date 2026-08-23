@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="HoloNet.Games.Tests/HoloNet.Games.Tests.csproj" />
   <Project Path="HoloNet.Games/HoloNet.Games.csproj" />
   <Project Path="HoloNet.Photos/HoloNet.Photos.csproj" />
   <Project Path="HoloNet.Portal/HoloNet.Portal.csproj" />
