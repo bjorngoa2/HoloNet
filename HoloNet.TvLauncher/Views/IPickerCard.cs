@@ -36,4 +36,11 @@ public interface IPickerCard : INotifyPropertyChanged
     bool IsFolder { get; }
 
     bool IsSelected { get; set; }
+
+    /// <summary>
+    /// Double dispatches to the matching <see cref="IPickerCardVisitor{TResult}"/> method for
+    /// this card's concrete type, so callers can act on "which kind of card is this" without
+    /// type-checking/downcasting (see <see cref="IPickerCardVisitor{TResult}"/>).
+    /// </summary>
+    TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor);
 }
