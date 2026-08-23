@@ -61,23 +61,16 @@ public class SaveStatsService(IOptions<TvLauncherOptions> options, ILogger<SaveS
             }
         }
 
-        int? currency = null;
-        if (data is not null && mapping?.CurrencyOffset is { } currencyOffset && currencyOffset + 4 <= data.Length)
-            currency = BitConverter.ToInt32(data, currencyOffset);
+        int? currency = ReadInt32OrNull(data, mapping?.CurrencyOffset);
 
         TimeSpan? playtime = null;
-        if (data is not null && mapping?.PlaytimeFramesOffset is { } playtimeOffset && playtimeOffset + 4 <= data.Length)
-        {
-            var frames = BitConverter.ToUInt32(data, playtimeOffset);
-            var seconds = frames / mapping.PlaytimeFrameRate;
-            playtime = TimeSpan.FromSeconds(seconds);
-        }
+        if (ReadUInt32OrNull(data, mapping?.PlaytimeFramesOffset) is { } frames)
+            playtime = TimeSpan.FromSeconds(frames / mapping!.PlaytimeFrameRate);
 
         string? location = null;
-        if (data is not null && mapping?.LocationOffset is { } locationOffset && locationOffset + 4 <= data.Length)
+        if (ReadInt32OrNull(data, mapping?.LocationOffset) is { } rawLocation)
         {
-            var rawLocation = BitConverter.ToInt32(data, locationOffset);
-            if (mapping.LocationNames.TryGetValue(rawLocation, out var name))
+            if (mapping!.LocationNames.TryGetValue(rawLocation, out var name))
             {
                 location = name;
             }
@@ -96,6 +89,23 @@ public class SaveStatsService(IOptions<TvLauncherOptions> options, ILogger<SaveS
 
         return new SaveStats(currency, mapping?.CurrencyLabel ?? "Currency", playtime, lastPlayed, location);
     }
+
+    /// <summary>
+    /// Reads a little-endian <see cref="int"/> at <paramref name="offset"/> within
+    /// <paramref name="data"/>, or <c>null</c> if <paramref name="data"/> hasn't been read,
+    /// <paramref name="offset"/> isn't configured, or the offset would read past the end of the
+    /// save file (a mismatched/wrong offset for this save's actual layout).
+    /// </summary>
+    private static int? ReadInt32OrNull(byte[]? data, int? offset) =>
+        data is not null && offset is { } o && o + 4 <= data.Length
+            ? BitConverter.ToInt32(data, o)
+            : null;
+
+    /// <summary>Unsigned counterpart to <see cref="ReadInt32OrNull"/>, e.g. for frame counts.</summary>
+    private static uint? ReadUInt32OrNull(byte[]? data, int? offset) =>
+        data is not null && offset is { } o && o + 4 <= data.Length
+            ? BitConverter.ToUInt32(data, o)
+            : null;
 
     /// <summary>
     /// Finds the on-card save that belongs to <paramref name="gameTitle"/>: either the
