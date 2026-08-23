@@ -8,9 +8,14 @@ namespace HoloNet.Video.Services;
 public interface IVideoService
 {
     Task<IEnumerable<VideoDto>> GetAllAsync();
-    Task<Stream?> GetStreamAsync(string id);
+    Task<VideoStream?> GetStreamAsync(string id);
     Task<VideoDto?> GetAsync(string id);
 }
+
+/// <summary>An open read stream for a video, paired with its file extension so the caller can
+/// resolve a content-type (see <see cref="VideoFileTypes.GetContentType"/>) without a second
+/// lookup back through <see cref="IVideoService.GetAsync"/>.</summary>
+public sealed record VideoStream(Stream Stream, string Extension);
 
 public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
 {
@@ -18,8 +23,6 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
 
     public Task<IEnumerable<VideoDto>> GetAllAsync()
     {
-        string[] validExtensions = [".mp4", ".mkv", ".avi", ".mov"];
-
         var directory = _videoServiceOptions.GetVideoDirectory();
         var baseUrl = _videoServiceOptions.GetBaseUrl();
 
@@ -28,7 +31,7 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         return Task.Run<IEnumerable<VideoDto>>(() =>
         {
             var videoFileNames = Directory.EnumerateFiles(directory.Path, "*", SearchOption.AllDirectories)
-                .Where(x => validExtensions.Contains(Path.GetExtension(x), StringComparer.OrdinalIgnoreCase));
+                .Where(VideoFileTypes.IsSupported);
 
             List<VideoDto> videos = [];
             foreach (var filename in videoFileNames)
@@ -45,28 +48,36 @@ public class VideoService(IOptions<VideoServiceOptions> options) : IVideoService
         });
     }
 
-    public Task<Stream?> GetStreamAsync(string id)
+    /// <summary>
+    /// Resolves a video id to its absolute file path, or <c>null</c> if the id is malformed,
+    /// doesn't decode to a path within <see cref="VideoServiceOptions.GetVideoDirectory"/> (the
+    /// path-traversal guard shared by every endpoint that accepts a video id), or the file no
+    /// longer exists.
+    /// </summary>
+    private string? ResolveFilePath(string id)
     {
         var filename = FileId.TryDecode(id);
-        if (filename is null || !_videoServiceOptions.GetVideoDirectory().Contains(filename))
-            return Task.FromResult<Stream?>(null);
+        return filename is not null && _videoServiceOptions.GetVideoDirectory().Contains(filename) && File.Exists(filename)
+            ? filename
+            : null;
+    }
 
-        if (!File.Exists(filename))
-            return Task.FromResult<Stream?>(null);
+    public Task<VideoStream?> GetStreamAsync(string id)
+    {
+        var filename = ResolveFilePath(id);
+        if (filename is null)
+            return Task.FromResult<VideoStream?>(null);
 
         var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 4096, useAsync: true);
 
-        return Task.FromResult<Stream?>(stream);
+        return Task.FromResult<VideoStream?>(new VideoStream(stream, Path.GetExtension(filename)));
     }
 
     public Task<VideoDto?> GetAsync(string id)
     {
-        var filename = FileId.TryDecode(id);
-        if (filename is null || !_videoServiceOptions.GetVideoDirectory().Contains(filename))
-            return Task.FromResult<VideoDto?>(null);
-
-        if (!File.Exists(filename))
+        var filename = ResolveFilePath(id);
+        if (filename is null)
             return Task.FromResult<VideoDto?>(null);
 
         var fileInfo = new FileInfo(filename);
