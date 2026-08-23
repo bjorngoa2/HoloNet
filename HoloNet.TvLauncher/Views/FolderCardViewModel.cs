@@ -36,6 +36,8 @@ public class FolderCardViewModel(string title, string subtitle, Func<List<IPicke
 
     public List<IPickerCard> GetChildren() => childrenFactory();
 
+    public TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitFolder(this);
+
     public bool IsSelected
     {
         get => _isSelected;
