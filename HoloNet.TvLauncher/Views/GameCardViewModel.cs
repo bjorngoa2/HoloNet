@@ -105,6 +105,8 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : IPic
 
     public bool HasSaveStats => SaveStatsText.Length > 0;
 
+    public TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitGame(this);
+
     public bool IsSelected
     {
         get => _isSelected;
