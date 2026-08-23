@@ -15,11 +15,6 @@ public partial class MainWindow : Window
     // Matches CardStyle Width (220) + left/right Margin (12 each) in MainWindow.xaml.
     private const double CardFootprintWidth = 220 + 24;
 
-    // How often the screensaver logo's position is updated — a smooth-looking "DVD logo" drift
-    // without needing a full WPF storyboard/animation for something this simple.
-    private static readonly TimeSpan ScreensaverAnimationInterval = TimeSpan.FromMilliseconds(30);
-    private const double ScreensaverLogoSpeedPixelsPerSecond = 40;
-
     private readonly IGamesApiClient _gamesApiClient;
     private readonly IGameLauncher _gameLauncher;
     private readonly IGamepadService _gamepadService;
@@ -27,29 +22,31 @@ public partial class MainWindow : Window
     private readonly IGameScreenshotService _screenshotService;
     private readonly TvLauncherOptions _options;
 
-    private readonly List<IPickerCard> _cards = [];
-    private readonly List<GameCardViewModel> _allGameCards = [];
-    private readonly Stack<NavFrame> _navigationStack = new();
-    private FolderCardViewModel? _currentFolder;
-    private string _headerTitle = "Home";
+    private readonly FolderNavigator _navigator;
+    private readonly ScreensaverController _screensaver;
     private int _selectedIndex;
     private bool _isBusy;
 
-    private DateTime _lastActivityUtc = DateTime.UtcNow;
-    private readonly DispatcherTimer _idleCheckTimer;
-    private DispatcherTimer? _screensaverAnimationTimer;
-    private bool _screensaverActive;
-    private double _logoX;
-    private double _logoY;
-    private double _logoVelocityX = ScreensaverLogoSpeedPixelsPerSecond;
-    private double _logoVelocityY = ScreensaverLogoSpeedPixelsPerSecond;
-
     /// <summary>
-    /// Snapshot of a screen pushed onto <see cref="_navigationStack"/> when descending into a
-    /// folder (see <see cref="EnterFolder"/>), so <see cref="GoBack"/> can restore exactly what
-    /// was on screen (including the previously-selected card) rather than rebuilding it.
+    /// Dispatches "the player selected this card" to the right behavior for its concrete type
+    /// (see <see cref="IPickerCardVisitor{TResult}"/>) — folder tiles navigate, shortcut and game
+    /// tiles launch — without <see cref="LaunchSelectedAsync"/> needing to type-check/downcast
+    /// the selected card itself.
     /// </summary>
-    private sealed record NavFrame(string HeaderTitle, List<IPickerCard> Cards, int SelectedIndex, FolderCardViewModel? Folder);
+    private sealed class SelectionVisitor(MainWindow window) : IPickerCardVisitor<Task>
+    {
+        public Task VisitFolder(FolderCardViewModel folder)
+        {
+            window.EnterFolder(folder);
+            return Task.CompletedTask;
+        }
+
+        public Task VisitShortcut(ShortcutCardViewModel shortcut) => window.LaunchShortcutAsync(shortcut);
+
+        public Task VisitGame(GameCardViewModel game) => window.LaunchGameAsync(game);
+    }
+
+    private readonly SelectionVisitor _selectionVisitor;
 
     public MainWindow(
         IGamesApiClient gamesApiClient,
@@ -61,6 +58,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        _selectionVisitor = new SelectionVisitor(this);
+
         _gamesApiClient = gamesApiClient;
         _gameLauncher = gameLauncher;
         _gamepadService = gamepadService;
@@ -68,8 +67,15 @@ public partial class MainWindow : Window
         _screenshotService = screenshotService;
         _options = options.Value;
 
-        _idleCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _idleCheckTimer.Tick += (_, _) => CheckIdleTimeout();
+        _navigator = new FolderNavigator(_options);
+        _screensaver = new ScreensaverController(
+            _options,
+            ScreensaverGrid,
+            ScreensaverLogo,
+            ScreensaverLogoTransform,
+            () => ActualWidth,
+            () => ActualHeight,
+            () => _isBusy);
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
         Loaded += async (_, _) =>
@@ -77,15 +83,13 @@ public partial class MainWindow : Window
             _gamepadService.AttachWindowHandle(new WindowInteropHelper(this).Handle);
             await RefreshAsync();
             _gamepadService.Start();
-            if (_options.ScreensaverEnabled)
-                _idleCheckTimer.Start();
+            _screensaver.Start();
         };
         Closed += (_, _) =>
         {
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
-            _idleCheckTimer.Stop();
-            _screensaverAnimationTimer?.Stop();
+            _screensaver.Dispose();
         };
     }
 
@@ -102,8 +106,7 @@ public partial class MainWindow : Window
         try
         {
             var games = await _gamesApiClient.GetGamesAsync();
-            _allGameCards.Clear();
-            _allGameCards.AddRange(games.Select(g =>
+            _navigator.SetGames(games.Select(g =>
             {
                 var card = new GameCardViewModel(g, _saveStatsService.GetStats(g.Title));
                 if (_options.ShowcaseScreenshotEnabled)
@@ -111,20 +114,7 @@ public partial class MainWindow : Window
                 return card;
             }));
 
-            if (_currentFolder is null)
-            {
-                _navigationStack.Clear();
-                ShowRootScreen();
-            }
-            else
-            {
-                // The current folder's children factory reads live from _allGameCards, so
-                // re-invoking it after the fetch above already reflects the fresh data — no
-                // need to rebuild the whole navigation path from scratch.
-                _cards.Clear();
-                _cards.AddRange(_currentFolder.GetChildren());
-                ApplyCards();
-            }
+            ApplyCards();
         }
         catch (Exception ex)
         {
@@ -132,97 +122,57 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowRootScreen()
-    {
-        _currentFolder = null;
-        _headerTitle = "Home";
-
-        var gamesFolder = new FolderCardViewModel(
-            "Games",
-            $"{_allGameCards.Count} game{(_allGameCards.Count == 1 ? "" : "s")}",
-            BuildPlatformFolders);
-
-        _cards.Clear();
-        _cards.Add(gamesFolder);
-        _cards.AddRange(_options.Shortcuts.Select(s => (IPickerCard)new ShortcutCardViewModel(s)));
-
-        ApplyCards();
-    }
-
-    private List<IPickerCard> BuildPlatformFolders() =>
-        _allGameCards
-            .GroupBy(c => c.Platform, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => DisplayNameForPlatform(g.Key), StringComparer.OrdinalIgnoreCase)
-            .Select(g => (IPickerCard)new FolderCardViewModel(
-                DisplayNameForPlatform(g.Key),
-                $"{g.Count()} game{(g.Count() == 1 ? "" : "s")}",
-                () => g.Cast<IPickerCard>().ToList()))
-            .ToList();
-
-    private string DisplayNameForPlatform(string platform) =>
-        _options.PlatformDisplayNames.TryGetValue(platform, out var displayName) ? displayName : platform;
-
     private void EnterFolder(FolderCardViewModel folder)
     {
-        _navigationStack.Push(new NavFrame(_headerTitle, [.. _cards], _selectedIndex, _currentFolder));
-
-        _currentFolder = folder;
-        _headerTitle = folder.Title;
-        _cards.Clear();
-        _cards.AddRange(folder.GetChildren());
-
+        _navigator.EnterFolder(folder, _selectedIndex);
         ApplyCards();
     }
 
     private void GoBack()
     {
-        if (_navigationStack.Count == 0)
+        if (!_navigator.CanGoBack)
             return;
 
-        var frame = _navigationStack.Pop();
-        _currentFolder = frame.Folder;
-        _headerTitle = frame.HeaderTitle;
-        _cards.Clear();
-        _cards.AddRange(frame.Cards);
-
+        _selectedIndex = _navigator.GoBack();
         SetItemsSource();
-        _selectedIndex = _cards.Count > 0 ? Math.Clamp(frame.SelectedIndex, 0, _cards.Count - 1) : -1;
         UpdateSelection();
         UpdateHeaderAndStatus();
     }
 
     /// <summary>
-    /// Pushes <see cref="_cards"/> to the UI and refreshes selection/header/status text — the
-    /// common tail end of showing any screen (root, entering a folder, or a folder refresh).
+    /// Pushes <see cref="FolderNavigator.Cards"/> to the UI and refreshes selection/header/status
+    /// text — the common tail end of showing any screen (root, entering a folder, or a folder
+    /// refresh).
     /// </summary>
     private void ApplyCards()
     {
         SetItemsSource();
-        _selectedIndex = _cards.Count > 0 ? 0 : -1;
+        _selectedIndex = _navigator.Cards.Count > 0 ? 0 : -1;
         UpdateSelection();
         UpdateHeaderAndStatus();
     }
 
     /// <summary>
-    /// Re-points <see cref="GamesItemsControl"/> at <see cref="_cards"/>. <c>_cards</c> is one
-    /// mutable list reused for every screen (root, a folder's contents, going back) rather than
-    /// a fresh list per screen — but WPF's <c>ItemsSource</c> only regenerates the grid when the
-    /// assigned reference actually changes, so reassigning the same reference after mutating it
-    /// is silently ignored. Clearing to <c>null</c> first forces a genuine reference change on
-    /// every call so the grid always picks up the new contents.
+    /// Re-points <see cref="GamesItemsControl"/> at <see cref="FolderNavigator.Cards"/>.
+    /// <c>Cards</c> is one mutable list reused for every screen (root, a folder's contents,
+    /// going back) rather than a fresh list per screen — but WPF's <c>ItemsSource</c> only
+    /// regenerates the grid when the assigned reference actually changes, so reassigning the
+    /// same reference after mutating it is silently ignored. Clearing to <c>null</c> first
+    /// forces a genuine reference change on every call so the grid always picks up the new
+    /// contents.
     /// </summary>
     private void SetItemsSource()
     {
         GamesItemsControl.ItemsSource = null;
-        GamesItemsControl.ItemsSource = _cards;
+        GamesItemsControl.ItemsSource = _navigator.Cards;
     }
 
     private void UpdateHeaderAndStatus()
     {
-        HeaderText.Text = $"HoloNet — {_headerTitle}";
+        HeaderText.Text = $"HoloNet — {_navigator.HeaderTitle}";
 
-        var backHint = _navigationStack.Count > 0 ? " · B: back" : "";
-        SetStatus(_cards.Count == 0
+        var backHint = _navigator.CanGoBack ? " · B: back" : "";
+        SetStatus(_navigator.Cards.Count == 0
             ? $"Nothing here. Press Start to refresh.{backHint}"
             : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}");
     }
@@ -231,16 +181,16 @@ public partial class MainWindow : Window
 
     private void UpdateSelection()
     {
-        for (var i = 0; i < _cards.Count; i++)
-            _cards[i].IsSelected = i == _selectedIndex;
+        for (var i = 0; i < _navigator.Cards.Count; i++)
+            _navigator.Cards[i].IsSelected = i == _selectedIndex;
 
         UpdateSaveInfo();
     }
 
     private void UpdateSaveInfo()
     {
-        var selected = _selectedIndex >= 0 && _selectedIndex < _cards.Count
-            ? _cards[_selectedIndex] as GameCardViewModel
+        var selected = _selectedIndex >= 0 && _selectedIndex < _navigator.Cards.Count
+            ? _navigator.Cards[_selectedIndex] as GameCardViewModel
             : null;
         if (selected is not null && selected.HasSaveStats)
         {
@@ -305,11 +255,11 @@ public partial class MainWindow : Window
 
     private async void HandleButton(GamepadButton button)
     {
-        _lastActivityUtc = DateTime.UtcNow;
+        _screensaver.NotifyActivity();
 
-        if (_screensaverActive)
+        if (_screensaver.IsActive)
         {
-            HideScreensaver();
+            _screensaver.Dismiss();
             return;
         }
 
@@ -326,7 +276,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_cards.Count == 0)
+        if (_navigator.Cards.Count == 0)
         {
             if (button == GamepadButton.Refresh)
                 await RefreshAsync();
@@ -366,38 +316,33 @@ public partial class MainWindow : Window
     private void Move(int delta)
     {
         var next = _selectedIndex + delta;
-        if (next < 0 || next >= _cards.Count)
+        if (next < 0 || next >= _navigator.Cards.Count)
             return;
 
         _selectedIndex = next;
         UpdateSelection();
     }
 
-    private async Task LaunchSelectedAsync()
+    private Task LaunchSelectedAsync()
     {
-        if (_selectedIndex < 0 || _selectedIndex >= _cards.Count)
-            return;
+        if (_selectedIndex < 0 || _selectedIndex >= _navigator.Cards.Count)
+            return Task.CompletedTask;
 
-        if (_cards[_selectedIndex] is FolderCardViewModel folder)
+        return _navigator.Cards[_selectedIndex].Accept(_selectionVisitor);
+    }
+
+    private async Task LaunchShortcutAsync(ShortcutCardViewModel shortcut)
+    {
+        if (!_gameLauncher.LaunchShortcut(shortcut.Shortcut.Url))
         {
-            EnterFolder(folder);
-            return;
+            ShowOverlay($"Couldn't open \"{shortcut.Title}\".\n\nPress A to dismiss.");
+            await WaitForDismissAsync();
+            HideOverlay();
         }
+    }
 
-        if (_cards[_selectedIndex] is ShortcutCardViewModel shortcut)
-        {
-            if (!_gameLauncher.LaunchShortcut(shortcut.Shortcut.Url))
-            {
-                ShowOverlay($"Couldn't open \"{shortcut.Title}\".\n\nPress A to dismiss.");
-                await WaitForDismissAsync();
-                HideOverlay();
-            }
-            return;
-        }
-
-        if (_cards[_selectedIndex] is not GameCardViewModel gameCard)
-            return;
-
+    private async Task LaunchGameAsync(GameCardViewModel gameCard)
+    {
         var game = gameCard.Game;
 
         _isBusy = true;
@@ -432,7 +377,7 @@ public partial class MainWindow : Window
         {
             HideOverlay();
             _isBusy = false;
-            _lastActivityUtc = DateTime.UtcNow;
+            _screensaver.NotifyActivity();
         }
     }
 
@@ -502,65 +447,4 @@ public partial class MainWindow : Window
     }
 
     private void HideOverlay() => OverlayGrid.Visibility = Visibility.Collapsed;
-
-    private void CheckIdleTimeout()
-    {
-        // Don't show the screensaver over an emulator (it's covering the window anyway and
-        // constantly redrawing, so there's no burn-in risk from TvLauncher itself) or while a
-        // modal overlay/error message is up.
-        if (_screensaverActive || _isBusy)
-            return;
-
-        var idleFor = DateTime.UtcNow - _lastActivityUtc;
-        if (idleFor.TotalMinutes >= _options.ScreensaverIdleMinutes)
-            ShowScreensaver();
-    }
-
-    private void ShowScreensaver()
-    {
-        _screensaverActive = true;
-        ScreensaverGrid.Visibility = Visibility.Visible;
-
-        _logoX = 0;
-        _logoY = 0;
-        _logoVelocityX = ScreensaverLogoSpeedPixelsPerSecond;
-        _logoVelocityY = ScreensaverLogoSpeedPixelsPerSecond;
-
-        _screensaverAnimationTimer ??= new DispatcherTimer { Interval = ScreensaverAnimationInterval };
-        _screensaverAnimationTimer.Tick -= OnScreensaverAnimationTick;
-        _screensaverAnimationTimer.Tick += OnScreensaverAnimationTick;
-        _screensaverAnimationTimer.Start();
-    }
-
-    private void HideScreensaver()
-    {
-        _screensaverActive = false;
-        ScreensaverGrid.Visibility = Visibility.Collapsed;
-        _screensaverAnimationTimer?.Stop();
-    }
-
-    private void OnScreensaverAnimationTick(object? sender, EventArgs e)
-    {
-        var maxX = Math.Max(0, ActualWidth - ScreensaverLogo.ActualWidth);
-        var maxY = Math.Max(0, ActualHeight - ScreensaverLogo.ActualHeight);
-        var deltaSeconds = ScreensaverAnimationInterval.TotalSeconds;
-
-        _logoX += _logoVelocityX * deltaSeconds;
-        _logoY += _logoVelocityY * deltaSeconds;
-
-        if (_logoX <= 0 || _logoX >= maxX)
-        {
-            _logoX = Math.Clamp(_logoX, 0, maxX);
-            _logoVelocityX = -_logoVelocityX;
-        }
-
-        if (_logoY <= 0 || _logoY >= maxY)
-        {
-            _logoY = Math.Clamp(_logoY, 0, maxY);
-            _logoVelocityY = -_logoVelocityY;
-        }
-
-        ScreensaverLogoTransform.X = _logoX;
-        ScreensaverLogoTransform.Y = _logoY;
-    }
 }
