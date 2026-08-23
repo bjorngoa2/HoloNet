@@ -31,9 +31,7 @@ services:
     restart: unless-stopped
 
   holonet-portal:
-    build:
-      context: .
-      dockerfile: HoloNet.Portal/Dockerfile
+    image: ghcr.io/bjorngoa2/holonet-portal:${IMAGE_TAG:-latest}
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - Portal__VideoUrl=http://videos.goa.no
@@ -44,9 +42,7 @@ services:
     restart: unless-stopped
 
   holonet-video:
-    build:
-      context: .
-      dockerfile: HoloNet.Video/Dockerfile
+    image: ghcr.io/bjorngoa2/holonet-video:${IMAGE_TAG:-latest}
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - VideoService__VideoPath=/data/videos
@@ -58,9 +54,7 @@ services:
     restart: unless-stopped
 
   holonet-photos:
-    build:
-      context: .
-      dockerfile: HoloNet.Photos/Dockerfile
+    image: ghcr.io/bjorngoa2/holonet-photos:${IMAGE_TAG:-latest}
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - PhotoService__PhotoPath=/data/photos
@@ -72,9 +66,7 @@ services:
     restart: unless-stopped
 
   holonet-games:
-    build:
-      context: .
-      dockerfile: HoloNet.Games/Dockerfile
+    image: ghcr.io/bjorngoa2/holonet-games:${IMAGE_TAG:-latest}
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - GameService__GamePath=/data/games
@@ -88,3 +80,4 @@ services:
 networks:
   holonet:
     driver: bridge
+
