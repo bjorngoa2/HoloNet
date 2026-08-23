@@ -1,5 +1,6 @@
 using HoloNet.Photos.Configuration;
 using HoloNet.Photos.Services;
+using HoloNet.Shared.Filters;
 using HoloNet.Shared.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,7 +52,7 @@ app.MapGet("api/v1/photos/{id}", async (IPhotoService service, string id) =>
     }
 
     return Results.Ok(photoMetadata);
-}).WithName("GetPhoto").AddEndpointFilter<RequirePhotoIdFilter>();
+}).WithName("GetPhoto").AddEndpointFilter(EndpointFilters.RequireRouteValue("id", "Photo id is required."));
 
 app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) =>
 {
@@ -63,25 +64,7 @@ app.MapGet("api/v1/photos/{id}/image", async (IPhotoService service, string id) 
     var contentType = stream is FileStream fs ? PhotoContentTypes.GetContentType(fs.Name) : "image/png";
 
     return Results.File(stream, contentType);
-}).WithName("GetPhotoImage").AddEndpointFilter<RequirePhotoIdFilter>();
+}).WithName("GetPhotoImage").AddEndpointFilter(EndpointFilters.RequireRouteValue("id", "Photo id is required."));
 
 
 app.Run();
-
-/// <summary>
-/// Rejects a request with a 400 Problem response if its <c>{id}</c> route parameter is
-/// missing/whitespace, before the endpoint handler runs. Consolidates the same guard that used
-/// to be copy-pasted at the top of every <c>{id}</c>-based endpoint above.
-/// </summary>
-internal sealed class RequirePhotoIdFilter : IEndpointFilter
-{
-    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var id = context.HttpContext.Request.RouteValues["id"] as string;
-        if (string.IsNullOrWhiteSpace(id))
-            return ValueTask.FromResult<object?>(
-                Results.Problem("Photo id is required.", statusCode: StatusCodes.Status400BadRequest));
-
-        return next(context);
-    }
-}

@@ -1,5 +1,6 @@
 using HoloNet.Games.Configuration;
 using HoloNet.Games.Services;
+using HoloNet.Shared.Filters;
 using HoloNet.Shared.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,7 +56,7 @@ app.MapGet("api/v1/games/{id}", async (IGameService service, string id) =>
     }
 
     return Results.Ok(game);
-}).WithName("GetGame").AddEndpointFilter<RequireGameIdFilter>();
+}).WithName("GetGame").AddEndpointFilter(EndpointFilters.RequireRouteValue("id", "Game id is required."));
 
 app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =>
 {
@@ -70,7 +71,7 @@ app.MapGet("api/v1/games/{id}/launch", async (IGameService service, string id) =
             statusCode: StatusCodes.Status409Conflict);
 
     return Results.Ok(launchIntent);
-}).WithName("LaunchGame").AddEndpointFilter<RequireGameIdFilter>();
+}).WithName("LaunchGame").AddEndpointFilter(EndpointFilters.RequireRouteValue("id", "Game id is required."));
 
 app.MapGet("api/v1/games/{id}/thumbnail", async (IGameService service, string id) =>
 {
@@ -82,25 +83,7 @@ app.MapGet("api/v1/games/{id}/thumbnail", async (IGameService service, string id
     var contentType = stream is FileStream fs ? ThumbnailFormat.GetContentType(fs.Name) : "image/png";
 
     return Results.File(stream, contentType);
-}).WithName("GetGameThumbnail").AddEndpointFilter<RequireGameIdFilter>();
+}).WithName("GetGameThumbnail").AddEndpointFilter(EndpointFilters.RequireRouteValue("id", "Game id is required."));
 
 
 app.Run();
-
-/// <summary>
-/// Rejects a request with a 400 Problem response if its <c>{id}</c> route parameter is
-/// missing/whitespace, before the endpoint handler runs. Consolidates the same guard that used
-/// to be copy-pasted at the top of every <c>{id}</c>-based endpoint above.
-/// </summary>
-internal sealed class RequireGameIdFilter : IEndpointFilter
-{
-    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var id = context.GetArgument<string>(1);
-        if (string.IsNullOrWhiteSpace(id))
-            return ValueTask.FromResult<object?>(
-                Results.Problem("Game id is required.", statusCode: StatusCodes.Status400BadRequest));
-
-        return next(context);
-    }
-}
