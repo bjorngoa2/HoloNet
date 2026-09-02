@@ -58,6 +58,15 @@ public interface IGameLauncher
     /// non-game shortcut tiles (see <see cref="Configuration.TvLauncherOptions.Shortcuts"/>).
     /// </summary>
     bool LaunchShortcut(string url);
+
+    /// <summary>
+    /// Platform names (from <see cref="TvLauncherOptions.EmulatorMappings"/>) whose configured
+    /// <see cref="EmulatorMapping.ExecutablePath"/> doesn't exist on this PC — checked once at
+    /// startup so the picker can surface a "these platforms won't work" warning up front,
+    /// rather than the player only discovering it partway through trying to launch a game (see
+    /// <see cref="Views.MainWindow"/>'s status line).
+    /// </summary>
+    IReadOnlyList<string> GetMissingEmulatorPlatforms();
 }
 
 /// <summary>
@@ -100,6 +109,14 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
             return new GameLaunchResult(
                 LaunchOutcome.NoEmulatorConfigured,
                 $"No emulator is configured for platform \"{launchIntent.Platform}\".");
+        }
+
+        if (!System.IO.File.Exists(mapping.ExecutablePath))
+        {
+            return new GameLaunchResult(
+                LaunchOutcome.NoEmulatorConfigured,
+                $"The emulator configured for \"{launchIntent.Platform}\" isn't installed on this PC.\n" +
+                $"Expected it at: {mapping.ExecutablePath}");
         }
 
         var arguments = mapping.ArgumentsTemplate.Replace("{NetworkPath}", launchIntent.NetworkPath);
@@ -201,5 +218,13 @@ public class GameLauncher(IOptions<TvLauncherOptions> options) : IGameLauncher
         {
             return false;
         }
+    }
+
+    public IReadOnlyList<string> GetMissingEmulatorPlatforms()
+    {
+        return _options.EmulatorMappings
+            .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Value.ExecutablePath) && !System.IO.File.Exists(kvp.Value.ExecutablePath))
+            .Select(kvp => kvp.Key)
+            .ToList();
     }
 }
