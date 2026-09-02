@@ -83,6 +83,7 @@ public partial class MainWindow : Window
             () => _isBusy);
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
+        VersionText.Text = $"v{FormatDisplayVersion(_appUpdateService.CurrentVersion)}";
         Loaded += async (_, _) =>
         {
             _gamepadService.AttachWindowHandle(new WindowInteropHelper(this).Handle);
@@ -232,9 +233,24 @@ public partial class MainWindow : Window
             ? $"Nothing here. Press Start to refresh.{backHint}"
             : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}";
 
+        var missingEmulatorPlatforms = _gameLauncher.GetMissingEmulatorPlatforms();
+        if (missingEmulatorPlatforms.Count > 0)
+            baseStatus = $"⚠ Not installed: {string.Join(", ", missingEmulatorPlatforms)} — those games won't launch. · {baseStatus}";
+
         SetStatus(_pendingUpdate is not null && !_updateDismissedThisSession
-            ? $"🔔 Update v{_pendingUpdate.NewVersion} ready — Start: view · {baseStatus}"
+            ? $"🔔 Update v{FormatDisplayVersion(_pendingUpdate.NewVersion)} ready — Start: view · {baseStatus}"
             : baseStatus);
+    }
+
+    /// <summary>
+    /// Strips Velopack's build-metadata suffix (e.g. the "+a1b2c3d" commit hash SemVer allows
+    /// after a "+") from a version string for display — that detail is useful in logs/CI but is
+    /// just visual noise for a player glancing at a small on-screen version label.
+    /// </summary>
+    private static string FormatDisplayVersion(string version)
+    {
+        var plusIndex = version.IndexOf('+');
+        return plusIndex < 0 ? version : version[..plusIndex];
     }
 
     private void SetStatus(string message) => StatusText.Text = message;
