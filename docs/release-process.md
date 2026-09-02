@@ -1,8 +1,9 @@
 # Release process
 
-HoloNet ships two kinds of artifacts from one release: versioned Docker images for the four
-web services (Portal, Video, Photos, Games), pulled by `docker-compose.yml` on the home
-server, and a self-contained TvLauncher build attached as a zip to the GitHub Release.
+HoloNet ships two kinds of artifacts from one release: versioned Docker images for the three
+deployed web services (Video, Photos, Games — Portal is not currently deployed; see its own
+notes), pulled by `docker-compose.yml` on the home server, and a Velopack-packaged TvLauncher
+installer/updater attached to the GitHub Release.
 
 ## Branch convention
 
@@ -22,8 +23,8 @@ server, and a self-contained TvLauncher build attached as a zip to the GitHub Re
    git push origin v1.4.0
    ```
    The tag — not the branch name — is what `release.yml` reacts to, so tagging is what
-   actually triggers building/publishing the images and the TvLauncher zip and creating the
-   GitHub Release.
+   actually triggers building/publishing the images, packing the TvLauncher Velopack release,
+   and creating the GitHub Release.
 4. Merge the release branch back into `main` (fast-forward or a merge commit) so any
    release-branch-only fixes aren't lost, then delete the release branch.
 
@@ -35,8 +36,17 @@ server, and a self-contained TvLauncher build attached as a zip to the GitHub Re
   IMAGE_TAG=v1.4.0 docker compose up -d
   ```
   Rolling back is the same command with the previous tag.
-- **TvLauncher:** download `HoloNet.TvLauncher-v1.4.0.zip` from the release's assets on
-  GitHub, extract, run.
+- **TvLauncher:**
+  - **First time on a TV PC:** download `HoloNetTvLauncher-win-Setup.exe` from the release's
+    assets on GitHub and run it once. This installs to `%LocalAppData%\HoloNetTvLauncher\` and
+    creates a shortcut — after this, do **not** replace it with a plain zip/portable copy, since
+    auto-update only works for an installed copy (`UpdateManager.IsInstalled`).
+  - **Every release after that:** nothing to do manually. TvLauncher checks GitHub Releases in
+    the background on each launch, downloads a newer version silently, and shows a "🔔 Update
+    ready" hint in its status line — press Start to review and confirm, or ignore it and keep
+    playing (see `HoloNet.TvLauncher/Services/AppUpdateService.cs`).
+  - Rolling back TvLauncher: run an older release's `-Setup.exe` again, or use
+    `vpk download github` + `vpk pack`/republish locally if you need to force a downgrade.
 
 ## Local development
 
