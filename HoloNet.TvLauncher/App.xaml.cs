@@ -5,6 +5,7 @@ using HoloNet.TvLauncher.Views;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Velopack;
 
 namespace HoloNet.TvLauncher;
 
@@ -14,6 +15,14 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // MUST be the very first thing that runs in the process — Velopack uses this hook to
+        // detect install/uninstall/update lifecycle events (e.g. it briefly relaunches with a
+        // special flag right after an update is applied, purely to fix up shortcuts) and
+        // short-circuits back out before any of the app's own startup logic below runs. Only
+        // does anything when this is a Velopack-installed copy (i.e. launched via the release's
+        // Setup.exe) — a portable/dev build just runs straight through as a no-op.
+        VelopackApp.Build().Run();
+
         base.OnStartup(e);
 
         // PS2 icon.sys save titles are Shift-JIS encoded; that codepage isn't included by
@@ -37,6 +46,7 @@ public partial class App : Application
                 services.AddSingleton<ISaveStatsService, SaveStatsService>();
                 services.AddSingleton<ILocationDiscoveryService, LocationDiscoveryService>();
                 services.AddSingleton<IGameScreenshotService, GameScreenshotService>();
+                services.AddSingleton<IAppUpdateService, AppUpdateService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();
