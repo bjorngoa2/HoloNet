@@ -1,3 +1,4 @@
+using System.Reflection;
 using HoloNet.TvLauncher.Configuration;
 using Microsoft.Extensions.Options;
 using Velopack;
@@ -14,6 +15,14 @@ public sealed record AppUpdateInfo(string CurrentVersion, string NewVersion, str
 
 public interface IAppUpdateService
 {
+    /// <summary>
+    /// The version of the app currently running, for display purposes (e.g. in the TV menu
+    /// header). Uses Velopack's installed version when running as an installed copy, falling
+    /// back to the assembly's informational version for portable/dev builds where Velopack's
+    /// <see cref="Velopack.UpdateManager"/> is unavailable.
+    /// </summary>
+    string CurrentVersion { get; }
+
     /// <summary>
     /// Checks GitHub Releases for a newer version and, if one exists, downloads it in the
     /// background. Returns <c>null</c> if already up to date, if this isn't a Velopack-installed
@@ -55,6 +64,24 @@ public sealed class AppUpdateService : IAppUpdateService
                 return null;
             }
         });
+    }
+
+    public string CurrentVersion
+    {
+        get
+        {
+            var updateManager = _updateManager.Value;
+            if (updateManager is { IsInstalled: true } && updateManager.CurrentVersion is not null)
+                return updateManager.CurrentVersion.ToString();
+
+            // Portable/dev build — fall back to the assembly's informational version (set from
+            // the csproj's <Version>, matching the tag used for the last release build).
+            var assembly = Assembly.GetExecutingAssembly();
+            var infoVersion = assembly
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion;
+            return string.IsNullOrWhiteSpace(infoVersion) ? "dev" : infoVersion;
+        }
     }
 
     public async Task<AppUpdateInfo?> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default)
