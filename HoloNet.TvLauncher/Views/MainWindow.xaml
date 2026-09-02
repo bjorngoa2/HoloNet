@@ -90,6 +90,15 @@
                    Background="#AA0D0D12" Padding="12,8" Visibility="Collapsed" />
 
         <!--
+            Version label: small and muted in the bottom-right corner, out of the way of the
+            content grid and the status line — a common convention for kiosk/always-on apps
+            (e.g. Steam Big Picture, smart-TV app UIs) where the version is a discoverable
+            diagnostic detail, not something that should compete for attention.
+        -->
+        <TextBlock x:Name="VersionText" Grid.Row="2" Foreground="#4D9A9AA8" FontSize="11"
+                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,4" />
+
+        <!--
             "Where I currently am" showcase: a larger preview of the screenshot captured the
             last time the player quit the selected game, shown docked at the bottom-left of the
             grid (underneath the row of cards) rather than replacing the card's own cover-art

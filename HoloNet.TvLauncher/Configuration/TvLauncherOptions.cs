@@ -29,16 +29,21 @@ public class TvLauncherOptions
 
     /// <summary>
     /// DirectInput button indices (used for non-XInput pads such as PS4/PS5 DualShock/DualSense)
-    /// for the logical actions "Confirm", "Cancel", "Refresh", and "Share". Defaults match the
-    /// common PS4/PS5 DirectInput HID report layout (Cross=1, Circle=2, Options=9, Share=8) —
-    /// override here if a specific controller numbers its buttons differently.
+    /// for the logical actions "Confirm", "Cancel", "Refresh", and "Share". Each logical action
+    /// maps to a list of candidate indices rather than a single one, because the same physical
+    /// controller can report different HID button indices depending on connection type — e.g. a
+    /// DualSense wired via USB vs. paired over Bluetooth. Any index in the list counts as a
+    /// match, so both connection types work without needing separate configs or detection.
+    /// Defaults cover the commonly observed USB DualSense layout (Cross=1, Circle=2, Options=9,
+    /// Share=8) — add further indices here (e.g. from Bluetooth) if a specific controller/
+    /// connection reports different numbers.
     /// </summary>
-    public Dictionary<string, int> DirectInputButtonMappings { get; set; } = new()
+    public Dictionary<string, List<int>> DirectInputButtonMappings { get; set; } = new()
     {
-        ["Confirm"] = 1,
-        ["Cancel"] = 2,
-        ["Refresh"] = 9,
-        ["Share"] = 8
+        ["Confirm"] = [1],
+        ["Cancel"] = [2],
+        ["Refresh"] = [9],
+        ["Share"] = [8]
     };
 
     /// <summary>

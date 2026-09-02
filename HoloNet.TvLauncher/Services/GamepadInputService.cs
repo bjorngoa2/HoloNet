@@ -59,7 +59,7 @@ public sealed class GamepadInputService : IGamepadService
 {
     private const int ErrorSuccess = 0;
     private const int MaxXInputControllers = 4;
-    private const int DirectInputReinitIntervalPolls = 20; // ~2s at the default 100ms poll rate
+    private const int DirectInputReinitIntervalPolls = 5; // ~0.5s at the default 100ms poll rate
 
     #region XInput interop
 
@@ -245,9 +245,15 @@ public sealed class GamepadInputService : IGamepadService
         }
         catch (SharpDX.SharpDXException)
         {
-            // The device was unplugged or lost — drop it and try to re-acquire on a later poll.
+            // The device was unplugged, lost (e.g. Bluetooth sleep/reconnect), or went stale —
+            // drop it AND the cached DirectInput object so the next attempt does a fully fresh
+            // COM device enumeration rather than reusing a list that may still reference the
+            // now-dead instance.
             _directInputJoystick?.Dispose();
             _directInputJoystick = null;
+            _directInput?.Dispose();
+            _directInput = null;
+            _pollsSinceDirectInputInitAttempt = 0;
         }
     }
 
@@ -266,7 +272,11 @@ public sealed class GamepadInputService : IGamepadService
             if (devices.Count == 0)
                 return false;
 
-            var joystick = new Joystick(_directInput, devices[0].InstanceGuid);
+            // Prefer the most recently attached device rather than always devices[0] — after a
+            // Bluetooth reconnect, Windows can briefly list a stale/ghost instance ahead of the
+            // real, currently-live one, so favour the last entry in the enumeration.
+            var deviceInfo = devices[^1];
+            var joystick = new Joystick(_directInput, deviceInfo.InstanceGuid);
 
             if (_windowHandle != IntPtr.Zero)
                 joystick.SetCooperativeLevel(_windowHandle, CooperativeLevel.NonExclusive | CooperativeLevel.Background);
@@ -276,7 +286,9 @@ public sealed class GamepadInputService : IGamepadService
             // Guard against a known DirectInput quirk where the very first read after Acquire()
             // can report a stale/phantom "pressed" bit before real HID reports start arriving —
             // seed the baseline from an actual poll so the first real Poll() only reports genuine
-            // edges, not a false transition from the assumed all-false starting state.
+            // edges, not a false transition from the assumed all-false starting state. This also
+            // verifies the device actually responds — some stale/ghost instances Acquire() fine
+            // but throw immediately on the first real Poll(), which the catch below handles.
             joystick.Poll();
             var initialState = joystick.GetCurrentState();
 
@@ -289,6 +301,10 @@ public sealed class GamepadInputService : IGamepadService
         }
         catch (SharpDX.SharpDXException)
         {
+            // Acquisition or the verification poll failed — drop the DirectInput object too so
+            // the next attempt re-enumerates from scratch instead of retrying the same stale list.
+            _directInput?.Dispose();
+            _directInput = null;
             return false;
         }
     }
@@ -336,21 +352,43 @@ public sealed class GamepadInputService : IGamepadService
         _previousDirectInputButtons = (bool[])buttons.Clone();
     }
 
-    private static bool IsQuitComboPressed(bool[] buttons, IReadOnlyDictionary<string, int> mappings)
+    private static bool IsQuitComboPressed(bool[] buttons, IReadOnlyDictionary<string, List<int>> mappings)
     {
         return TryGetPressed(buttons, mappings, "Share") && TryGetPressed(buttons, mappings, "Refresh");
     }
 
-    private static bool TryGetPressed(bool[] buttons, IReadOnlyDictionary<string, int> mappings, string key)
-        => mappings.TryGetValue(key, out var index) && index >= 0 && index < buttons.Length && buttons[index];
-
-    private void RaiseButtonIfConfigured(bool[] buttons, IReadOnlyDictionary<string, int> mappings, string key, GamepadButton button)
+    private static bool TryGetPressed(bool[] buttons, IReadOnlyDictionary<string, List<int>> mappings, string key)
     {
-        if (!mappings.TryGetValue(key, out var index) || index < 0 || index >= buttons.Length)
+        if (!mappings.TryGetValue(key, out var indices))
+            return false;
+
+        foreach (var index in indices)
+        {
+            if (index >= 0 && index < buttons.Length && buttons[index])
+                return true;
+        }
+
+        return false;
+    }
+
+    private void RaiseButtonIfConfigured(bool[] buttons, IReadOnlyDictionary<string, List<int>> mappings, string key, GamepadButton button)
+    {
+        if (!mappings.TryGetValue(key, out var indices))
             return;
 
-        var wasPressed = index < _previousDirectInputButtons.Length && _previousDirectInputButtons[index];
-        RaiseOnRisingEdge(buttons[index], wasPressed, button);
+        var isPressed = false;
+        var wasPressed = false;
+
+        foreach (var index in indices)
+        {
+            if (index < 0 || index >= buttons.Length)
+                continue;
+
+            isPressed |= buttons[index];
+            wasPressed |= index < _previousDirectInputButtons.Length && _previousDirectInputButtons[index];
+        }
+
+        RaiseOnRisingEdge(isPressed, wasPressed, button);
     }
 
     private void HandleDirectInputStick(int x, int y)
