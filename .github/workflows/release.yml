@@ -55,6 +55,11 @@ jobs:
 
   publish-tvlauncher:
     runs-on: windows-latest
+    env:
+      VELOPACK_ID: HoloNetTvLauncher
+      PUBLISH_DIR: ${{ github.workspace }}/publish/TvLauncher
+      VELOPACK_OUTPUT_DIR: ${{ github.workspace }}/artifacts/velopack
+      VPK_VERSION: '1.2.0'
     steps:
       - uses: actions/checkout@v4
 
@@ -63,22 +68,52 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Publish TvLauncher (self-contained, win-x64)
         run: >
           dotnet publish HoloNet.TvLauncher/HoloNet.TvLauncher.csproj
           -c Release -r win-x64 --self-contained true
-          -p:PublishSingleFile=true
-          -o publish/TvLauncher
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PublishSingleFile=false
+          -o ${{ env.PUBLISH_DIR }}
 
-      - name: Zip published output
+      - name: Install vpk
+        run: dotnet tool install -g vpk --version ${{ env.VPK_VERSION }}
+
+      - name: Download previous release (for delta packages)
         shell: pwsh
-        run: Compress-Archive -Path publish/TvLauncher/* -DestinationPath HoloNet.TvLauncher-${{ github.ref_name }}.zip
+        # Best-effort: there's nothing to diff against for the very first Velopack-packaged
+        # release, so a failure here (no prior releases.win.json feed yet) is expected and
+        # shouldn't fail the job — vpk pack still produces a full (non-delta) package either way.
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.VELOPACK_OUTPUT_DIR }}" | Out-Null
+          vpk download github --repoUrl "https://github.com/${{ github.repository }}" --outputDir "${{ env.VELOPACK_OUTPUT_DIR }}" --token "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Pack Velopack release
+        shell: pwsh
+        run: |
+          vpk pack `
+            --packId "${{ env.VELOPACK_ID }}" `
+            --packVersion "${{ steps.version.outputs.version }}" `
+            --packDir "${{ env.PUBLISH_DIR }}" `
+            --mainExe "HoloNet.TvLauncher.exe" `
+            --outputDir "${{ env.VELOPACK_OUTPUT_DIR }}" `
+            --packAuthors "bjorngoa2" `
+            --packTitle "HoloNet TV Launcher"
 
       - name: Upload artifact for release job
         uses: actions/upload-artifact@v4
         with:
-          name: tvlauncher-zip
-          path: HoloNet.TvLauncher-${{ github.ref_name }}.zip
+          name: tvlauncher-velopack
+          path: ${{ env.VELOPACK_OUTPUT_DIR }}/**
+          if-no-files-found: error
 
   create-release:
     needs: [publish-images, publish-tvlauncher]
@@ -88,10 +123,14 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: tvlauncher-zip
+          name: tvlauncher-velopack
+          path: velopack
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: HoloNet.TvLauncher-*.zip
+          # Every file Velopack produces must be uploaded together — the full/delta .nupkg's,
+          # the Setup.exe installer, and releases.win.json (the update feed UpdateManager reads
+          # to discover new versions; see HoloNet.TvLauncher/Services/AppUpdateService.cs).
+          files: velopack/*

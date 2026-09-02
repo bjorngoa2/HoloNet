@@ -20,12 +20,15 @@ public partial class MainWindow : Window
     private readonly IGamepadService _gamepadService;
     private readonly ISaveStatsService _saveStatsService;
     private readonly IGameScreenshotService _screenshotService;
+    private readonly IAppUpdateService _appUpdateService;
     private readonly TvLauncherOptions _options;
 
     private readonly FolderNavigator _navigator;
     private readonly ScreensaverController _screensaver;
     private int _selectedIndex;
     private bool _isBusy;
+    private AppUpdateInfo? _pendingUpdate;
+    private bool _updateDismissedThisSession;
 
     /// <summary>
     /// Dispatches "the player selected this card" to the right behavior for its concrete type
@@ -54,6 +57,7 @@ public partial class MainWindow : Window
         IGamepadService gamepadService,
         ISaveStatsService saveStatsService,
         IGameScreenshotService screenshotService,
+        IAppUpdateService appUpdateService,
         IOptions<TvLauncherOptions> options)
     {
         InitializeComponent();
@@ -65,6 +69,7 @@ public partial class MainWindow : Window
         _gamepadService = gamepadService;
         _saveStatsService = saveStatsService;
         _screenshotService = screenshotService;
+        _appUpdateService = appUpdateService;
         _options = options.Value;
 
         _navigator = new FolderNavigator(_options);
@@ -84,6 +89,7 @@ public partial class MainWindow : Window
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
+            _ = CheckForUpdateInBackgroundAsync();
         };
         Closed += (_, _) =>
         {
@@ -126,6 +132,56 @@ public partial class MainWindow : Window
     {
         _navigator.EnterFolder(folder, _selectedIndex);
         ApplyCards();
+    }
+
+    /// <summary>
+    /// Checks GitHub Releases for a newer version in the background (see
+    /// <see cref="IAppUpdateService"/>) and, if one downloads successfully, folds a "🔔 Update
+    /// ready" hint into the existing status line rather than showing any new persistent screen
+    /// element (this picker can sit on-screen for days, so a fixed badge would itself become an
+    /// OLED burn-in risk). Pressing Start while the hint is showing opens the confirm modal (see
+    /// <see cref="ShowUpdateModalAsync"/>); never surfaces anything while busy or mid-game.
+    /// </summary>
+    private async Task CheckForUpdateInBackgroundAsync()
+    {
+        var update = await _appUpdateService.CheckAndDownloadUpdateAsync();
+        if (update is null)
+            return;
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            _pendingUpdate = update;
+            UpdateHeaderAndStatus();
+        });
+    }
+
+    /// <summary>
+    /// Shows the update confirm modal (reusing <see cref="OverlayGrid"/>, the same surface used
+    /// for launch/error states) with an explicit Install/Later choice, and applies the update
+    /// only if the player picks Install — "Later" is remembered for the rest of this session
+    /// (the status-line hint stays, but Start won't re-open the modal until next app launch).
+    /// </summary>
+    private async Task ShowUpdateModalAsync(AppUpdateInfo update)
+    {
+        _isBusy = true;
+        ShowOverlay($"Update v{update.NewVersion} is ready to install.\n\nA: Install & restart now    ·    B: Later");
+
+        _updateModalWait = new TaskCompletionSource<bool>();
+        var installNow = await _updateModalWait.Task;
+        _updateModalWait = null;
+
+        HideOverlay();
+        _isBusy = false;
+
+        if (installNow)
+        {
+            _appUpdateService.ApplyUpdateAndRestart(update);
+        }
+        else
+        {
+            _updateDismissedThisSession = true;
+            UpdateHeaderAndStatus();
+        }
     }
 
     private void GoBack()
@@ -172,9 +228,13 @@ public partial class MainWindow : Window
         HeaderText.Text = $"HoloNet — {_navigator.HeaderTitle}";
 
         var backHint = _navigator.CanGoBack ? " · B: back" : "";
-        SetStatus(_navigator.Cards.Count == 0
+        var baseStatus = _navigator.Cards.Count == 0
             ? $"Nothing here. Press Start to refresh.{backHint}"
-            : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}");
+            : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}";
+
+        SetStatus(_pendingUpdate is not null && !_updateDismissedThisSession
+            ? $"🔔 Update v{_pendingUpdate.NewVersion} ready — Start: view · {baseStatus}"
+            : baseStatus);
     }
 
     private void SetStatus(string message) => StatusText.Text = message;
@@ -265,6 +325,12 @@ public partial class MainWindow : Window
 
         if (_isBusy)
         {
+            if (_updateModalWait is not null && button is GamepadButton.Confirm or GamepadButton.Cancel)
+            {
+                _updateModalWait.TrySetResult(button == GamepadButton.Confirm);
+                return;
+            }
+
             if (button is GamepadButton.Confirm or GamepadButton.Cancel && _dismissWait is not null)
                 _dismissWait.TrySetResult();
 
@@ -273,6 +339,12 @@ public partial class MainWindow : Window
                 await _gameLauncher.QuitCurrentGameAsync();
             }
 
+            return;
+        }
+
+        if (button == GamepadButton.Refresh && _pendingUpdate is not null && !_updateDismissedThisSession)
+        {
+            await ShowUpdateModalAsync(_pendingUpdate);
             return;
         }
 
@@ -382,6 +454,7 @@ public partial class MainWindow : Window
     }
 
     private TaskCompletionSource? _dismissWait;
+    private TaskCompletionSource<bool>? _updateModalWait;
 
     /// <summary>
     /// Runs <see cref="IGameLauncher.LaunchAsync"/> while periodically capturing a "where I
