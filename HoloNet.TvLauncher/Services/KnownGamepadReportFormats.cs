@@ -100,58 +100,100 @@ internal sealed record KnownExtendedReportFormat(
 internal static class DualSenseButtons
 {
     private const byte HatSwitchMask = 0x0F;
-    private const byte Square = 0x10;
-    private const byte Cross = 0x20;
-    private const byte Circle = 0x40;
-    private const byte Triangle = 0x80;
+    // HID POV units are hundredths of a degree (0-35900); the pad's 8-way hat reports 0-7,
+    // so each step is 45 degrees = 4500 units. Same convention as the generic
+    // HidP_GetUsageValue path this replaces.
+    private const int PovUnitsPerHatStep = 4500;
 
-    private const byte L1 = 0x01;
-    private const byte R1 = 0x02;
-    private const byte L2 = 0x04;
-    private const byte R2 = 0x08;
-    private const byte Create = 0x10;
-    private const byte Options = 0x20;
-    private const byte L3 = 0x40;
-    private const byte R3 = 0x80;
+    [Flags]
+    private enum FaceButtonsAndHat : byte
+    {
+        Square = 0x10,
+        Cross = 0x20,
+        Circle = 0x40,
+        Triangle = 0x80
+    }
 
-    private const byte PsHome = 0x01;
-    private const byte TouchpadClick = 0x02;
+    [Flags]
+    private enum ShoulderAndSystemButtons : byte
+    {
+        L1 = 0x01,
+        R1 = 0x02,
+        L2 = 0x04, // digital L2 press, separate from its analog value
+        R2 = 0x08, // digital R2 press, separate from its analog value
+        Create = 0x10, // "Create" (PS5) / "Share" (PS4)
+        Options = 0x20,
+        L3 = 0x40,
+        R3 = 0x80
+    }
+
+    [Flags]
+    private enum HomeAndTouchpadButtons : byte
+    {
+        PsHome = 0x01,
+        TouchpadClick = 0x02
+    }
+
+    /// <summary>
+    /// 0-based indices into the <c>buttons</c> array <see cref="Parse"/> fills, matching the
+    /// HID Usage numbering the generic HidP_GetUsageValue path already produces (index = Usage
+    /// ID - 1 — confirmed live: Usage ID 2 → Cross/Confirm at index 1, Usage ID 3 →
+    /// Circle/Cancel at index 2, etc.), so this plugs into
+    /// <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/> without any
+    /// special-casing further up the stack.
+    /// </summary>
+    private enum ButtonIndex
+    {
+        Square = 0,
+        Cross = 1,
+        Circle = 2,
+        Triangle = 3,
+        L1 = 4,
+        R1 = 5,
+        L2 = 6,
+        R2 = 7,
+        Create = 8,
+        Options = 9,
+        L3 = 10,
+        R3 = 11,
+        PsHome = 12,
+        TouchpadClick = 13
+    }
+
+    private static void SetButton(bool[] buttons, ButtonIndex index, bool value) =>
+        buttons[(int)index] = value;
 
     /// <summary>
     /// Parses the three DualSense button bytes starting at <paramref name="buttonsOffset"/> in
-    /// <paramref name="report"/>, filling <paramref name="buttons"/> in place using the same
-    /// 0-based indices the generic HID Usage path already produces (confirmed live: Usage ID 2
-    /// → Cross/Confirm at index 1, Usage ID 3 → Circle/Cancel at index 2, etc.), so this plugs
-    /// into <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/> without any
-    /// special-casing further up the stack. Returns the D-pad POV value (see
+    /// <paramref name="report"/>, filling <paramref name="buttons"/> in place (see
+    /// <see cref="ButtonIndex"/> for the index convention). Returns the D-pad POV value (see
     /// <see cref="RawInputGamepadReader.Pov"/> for the value convention).
     /// </summary>
     public static int Parse(byte[] report, bool[] buttons, int buttonsOffset)
     {
-        var buttons0 = report[buttonsOffset];
-        var buttons1 = report[buttonsOffset + 1];
-        var buttons2 = report[buttonsOffset + 2];
+        var faceButtonsAndHat = (FaceButtonsAndHat)report[buttonsOffset];
+        var shoulderAndSystemButtons = (ShoulderAndSystemButtons)report[buttonsOffset + 1];
+        var homeAndTouchpadButtons = (HomeAndTouchpadButtons)report[buttonsOffset + 2];
 
-        buttons[0] = (buttons0 & Square) != 0;
-        buttons[1] = (buttons0 & Cross) != 0;
-        buttons[2] = (buttons0 & Circle) != 0;
-        buttons[3] = (buttons0 & Triangle) != 0;
-        buttons[4] = (buttons1 & L1) != 0;
-        buttons[5] = (buttons1 & R1) != 0;
-        buttons[6] = (buttons1 & L2) != 0; // digital L2 press, separate from its analog value
-        buttons[7] = (buttons1 & R2) != 0; // digital R2 press, separate from its analog value
-        buttons[8] = (buttons1 & Create) != 0; // "Create" (PS5) / "Share" (PS4)
-        buttons[9] = (buttons1 & Options) != 0;
-        buttons[10] = (buttons1 & L3) != 0;
-        buttons[11] = (buttons1 & R3) != 0;
-        buttons[12] = (buttons2 & PsHome) != 0;
-        buttons[13] = (buttons2 & TouchpadClick) != 0;
+        SetButton(buttons, ButtonIndex.Square, faceButtonsAndHat.HasFlag(FaceButtonsAndHat.Square));
+        SetButton(buttons, ButtonIndex.Cross, faceButtonsAndHat.HasFlag(FaceButtonsAndHat.Cross));
+        SetButton(buttons, ButtonIndex.Circle, faceButtonsAndHat.HasFlag(FaceButtonsAndHat.Circle));
+        SetButton(buttons, ButtonIndex.Triangle, faceButtonsAndHat.HasFlag(FaceButtonsAndHat.Triangle));
+        SetButton(buttons, ButtonIndex.L1, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.L1));
+        SetButton(buttons, ButtonIndex.R1, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.R1));
+        SetButton(buttons, ButtonIndex.L2, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.L2));
+        SetButton(buttons, ButtonIndex.R2, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.R2));
+        SetButton(buttons, ButtonIndex.Create, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.Create));
+        SetButton(buttons, ButtonIndex.Options, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.Options));
+        SetButton(buttons, ButtonIndex.L3, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.L3));
+        SetButton(buttons, ButtonIndex.R3, shoulderAndSystemButtons.HasFlag(ShoulderAndSystemButtons.R3));
+        SetButton(buttons, ButtonIndex.PsHome, homeAndTouchpadButtons.HasFlag(HomeAndTouchpadButtons.PsHome));
+        SetButton(buttons, ButtonIndex.TouchpadClick, homeAndTouchpadButtons.HasFlag(HomeAndTouchpadButtons.TouchpadClick));
 
         // Standard HID hat switches report 0-7 for the eight directions and a "null state"
-        // (commonly 8) when centered — same convention as the generic HidP_GetUsageValue path
-        // this replaces.
-        var hat = buttons0 & HatSwitchMask;
-        return hat <= 7 ? hat * 4500 : -1;
+        // (commonly 8) when centered.
+        var hat = report[buttonsOffset] & HatSwitchMask;
+        return hat <= 7 ? hat * PovUnitsPerHatStep : -1;
     }
 }
 
