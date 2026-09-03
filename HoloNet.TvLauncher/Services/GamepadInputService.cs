@@ -17,9 +17,35 @@ public enum GamepadButton
     Quit
 }
 
+/// <summary>
+/// Which physical controller family is currently being polled, so the UI can show matching
+/// button-prompt text/labels (e.g. "A" vs "Cross") instead of hardcoding one brand.
+/// </summary>
+public enum GamepadKind
+{
+    /// <summary>An Xbox-style pad polled via XInput.</summary>
+    Xbox,
+
+    /// <summary>A PlayStation (DualShock/DualSense) or other HID pad polled via DirectInput.</summary>
+    PlayStation
+}
+
 public interface IGamepadService : IDisposable
 {
     event EventHandler<GamepadButton>? ButtonPressed;
+
+    /// <summary>
+    /// Raised whenever <see cref="CurrentControllerKind"/> changes — e.g. a DualSense connects
+    /// after an Xbox pad was active, or vice versa — so the UI can refresh its button-prompt
+    /// text to match whichever pad is actually being read right now.
+    /// </summary>
+    event EventHandler<GamepadKind>? ControllerKindChanged;
+
+    /// <summary>
+    /// Which controller family is currently being polled. Defaults to <see cref="GamepadKind.PlayStation"/>
+    /// before any input has been read yet, since that's this app's primary supported pad.
+    /// </summary>
+    GamepadKind CurrentControllerKind { get; }
 
     /// <summary>
     /// Must be called once the main window's native handle exists (e.g. in its Loaded event)
@@ -28,9 +54,50 @@ public interface IGamepadService : IDisposable
     /// </summary>
     void AttachWindowHandle(IntPtr windowHandle);
 
+    /// <summary>
+    /// Forwards a WPF window message (via <c>HwndSource.AddHook</c> on the host window) so the
+    /// Raw Input quit-combo fallback — see <see cref="RawInputQuitComboListener"/> — can see
+    /// <c>WM_INPUT</c> messages. Harmless to call with any other message; only <c>WM_INPUT</c>
+    /// is acted on. Call <see cref="AttachWindowHandle"/> first so Raw Input registration has
+    /// already happened before messages start arriving.
+    /// </summary>
+    void ProcessWindowMessage(int msg, IntPtr lParam);
+
     void Start();
 
     void Stop();
+}
+
+/// <summary>
+/// Tracks a button combo that must be held continuously for a configured duration before
+/// firing once — used for the "quit current game" combo so it can't be triggered by a
+/// single accidental press, and won't repeat-fire while still held afterwards. Shared between
+/// <see cref="GamepadInputService"/>'s XInput/DirectInput polling and
+/// <see cref="RawInputQuitComboListener"/>'s independent Raw Input detection path.
+/// </summary>
+internal sealed class ComboHoldTracker
+{
+    private DateTime? _heldSince;
+    private bool _fired;
+
+    /// <returns><c>true</c> exactly once per hold, the moment the threshold is reached.</returns>
+    public bool Evaluate(bool isComboPressed, int thresholdMilliseconds)
+    {
+        if (!isComboPressed)
+        {
+            _heldSince = null;
+            _fired = false;
+            return false;
+        }
+
+        _heldSince ??= DateTime.UtcNow;
+
+        if (_fired || (DateTime.UtcNow - _heldSince.Value).TotalMilliseconds < thresholdMilliseconds)
+            return false;
+
+        _fired = true;
+        return true;
+    }
 }
 
 /// <summary>
@@ -53,7 +120,11 @@ public interface IGamepadService : IDisposable
 /// (DirectInput) held together for <see cref="TvLauncherOptions.QuitHoldMilliseconds"/> —
 /// raised as <see cref="GamepadButton.Quit"/>. This keeps working even while another
 /// application (the emulator) has window focus, since XInput polling is global and the
-/// DirectInput device is acquired in background/non-exclusive mode.
+/// DirectInput device is acquired in background/non-exclusive mode. A third, independent
+/// path — <see cref="RawInputQuitComboListener"/> — additionally detects just this quit combo
+/// via the Windows Raw Input API, since DirectInput can go completely blind to a
+/// Bluetooth-connected PS4/PS5 pad while certain emulators (e.g. PCSX2) are running; see the
+/// README's "PS4/PS5 controller over Bluetooth + PCSX2" section for the full story.
 /// </summary>
 public sealed class GamepadInputService : IGamepadService
 {
@@ -123,38 +194,21 @@ public sealed class GamepadInputService : IGamepadService
 
     private readonly ComboHoldTracker _xInputQuitCombo = new();
     private readonly ComboHoldTracker _directInputQuitCombo = new();
-
-    /// <summary>
-    /// Tracks a button combo that must be held continuously for a configured duration before
-    /// firing once — used for the "quit current game" combo so it can't be triggered by a
-    /// single accidental press, and won't repeat-fire while still held afterwards.
-    /// </summary>
-    private sealed class ComboHoldTracker
-    {
-        private DateTime? _heldSince;
-        private bool _fired;
-
-        /// <returns><c>true</c> exactly once per hold, the moment the threshold is reached.</returns>
-        public bool Evaluate(bool isComboPressed, int thresholdMilliseconds)
-        {
-            if (!isComboPressed)
-            {
-                _heldSince = null;
-                _fired = false;
-                return false;
-            }
-
-            _heldSince ??= DateTime.UtcNow;
-
-            if (_fired || (DateTime.UtcNow - _heldSince.Value).TotalMilliseconds < thresholdMilliseconds)
-                return false;
-
-            _fired = true;
-            return true;
-        }
-    }
+    private readonly RawInputQuitComboListener _rawInputQuitCombo;
 
     public event EventHandler<GamepadButton>? ButtonPressed;
+    public event EventHandler<GamepadKind>? ControllerKindChanged;
+
+    public GamepadKind CurrentControllerKind { get; private set; } = GamepadKind.PlayStation;
+
+    private void SetControllerKind(GamepadKind kind)
+    {
+        if (CurrentControllerKind == kind)
+            return;
+
+        CurrentControllerKind = kind;
+        ControllerKindChanged?.Invoke(this, kind);
+    }
 
     public GamepadInputService(IOptions<TvLauncherOptions> options)
     {
@@ -164,20 +218,39 @@ public sealed class GamepadInputService : IGamepadService
             Interval = TimeSpan.FromMilliseconds(Math.Max(_options.GamepadPollIntervalMs, 16))
         };
         _timer.Tick += (_, _) => Poll();
+        _rawInputQuitCombo = new RawInputQuitComboListener(
+            () => _options.DirectInputButtonMappings,
+            () => _options.QuitHoldMilliseconds,
+            () => ButtonPressed?.Invoke(this, GamepadButton.Quit));
     }
 
-    public void AttachWindowHandle(IntPtr windowHandle) => _windowHandle = windowHandle;
+    public void AttachWindowHandle(IntPtr windowHandle)
+    {
+        _windowHandle = windowHandle;
+        _rawInputQuitCombo.Attach(windowHandle);
+    }
 
     public void Start() => _timer.Start();
 
     public void Stop() => _timer.Stop();
 
+    /// <summary>
+    /// Forwards a WPF window message to the Raw Input quit-combo listener — must be wired up by
+    /// the host window (e.g. via <c>HwndSource.AddHook</c>) once <see cref="AttachWindowHandle"/>
+    /// has registered for Raw Input, so <c>WM_INPUT</c> messages actually reach this service.
+    /// </summary>
+    public void ProcessWindowMessage(int msg, IntPtr lParam) => _rawInputQuitCombo.HandleWindowMessage(msg, lParam);
+
     private void Poll()
     {
         if (TryPollXInput())
+        {
+            SetControllerKind(GamepadKind.Xbox);
             return;
+        }
 
-        TryPollDirectInput();
+        if (TryPollDirectInput())
+            SetControllerKind(GamepadKind.PlayStation);
     }
 
     #region XInput polling
@@ -232,16 +305,17 @@ public sealed class GamepadInputService : IGamepadService
 
     #region DirectInput polling
 
-    private void TryPollDirectInput()
+    private bool TryPollDirectInput()
     {
         if (_directInputJoystick is null && !TryInitializeDirectInput())
-            return;
+            return false;
 
         try
         {
             _directInputJoystick!.Poll();
             var state = _directInputJoystick.GetCurrentState();
             HandleDirectInputState(state);
+            return true;
         }
         catch (SharpDX.SharpDXException)
         {
@@ -254,6 +328,7 @@ public sealed class GamepadInputService : IGamepadService
             _directInput?.Dispose();
             _directInput = null;
             _pollsSinceDirectInputInitAttempt = 0;
+            return false;
         }
     }
 
@@ -424,5 +499,6 @@ public sealed class GamepadInputService : IGamepadService
         _timer.Stop();
         _directInputJoystick?.Dispose();
         _directInput?.Dispose();
+        _rawInputQuitCombo.Dispose();
     }
 }
