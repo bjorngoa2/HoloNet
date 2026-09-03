@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private AppUpdateInfo? _pendingUpdate;
     private bool _updateDismissedThisSession;
+    private HwndSource? _hwndSource;
 
     /// <summary>
     /// Dispatches "the player selected this card" to the right behavior for its concrete type
@@ -89,6 +90,8 @@ public partial class MainWindow : Window
         {
             var windowHandle = new WindowInteropHelper(this).Handle;
             _gamepadService.AttachWindowHandle(windowHandle);
+            _hwndSource = HwndSource.FromHwnd(windowHandle);
+            _hwndSource?.AddHook(HandleWindowMessage);
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
@@ -99,8 +102,21 @@ public partial class MainWindow : Window
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
             _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
+            _hwndSource?.RemoveHook(HandleWindowMessage);
             _screensaver.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Forwards every window message to <see cref="IGamepadService.ProcessWindowMessage"/> so
+    /// its Raw Input fallback reader (see <see cref="RawInputGamepadReader"/>) receives
+    /// <c>WM_INPUT</c> — needed because a Bluetooth DualSense can end up in a report mode
+    /// DirectInput cannot parse (see <see cref="GamepadInputService"/>'s doc comment).
+    /// </summary>
+    private IntPtr HandleWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        _gamepadService.ProcessWindowMessage(msg, lParam);
+        return IntPtr.Zero;
     }
 
     /// <summary>
