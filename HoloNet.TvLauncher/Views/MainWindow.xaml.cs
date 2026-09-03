@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private AppUpdateInfo? _pendingUpdate;
     private bool _updateDismissedThisSession;
+    private HwndSource? _hwndSource;
 
     /// <summary>
     /// Dispatches "the player selected this card" to the right behavior for its concrete type
@@ -83,10 +84,14 @@ public partial class MainWindow : Window
             () => _isBusy);
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
+        _gamepadService.ControllerKindChanged += OnControllerKindChanged;
         VersionText.Text = $"v{FormatDisplayVersion(_appUpdateService.CurrentVersion)}";
         Loaded += async (_, _) =>
         {
-            _gamepadService.AttachWindowHandle(new WindowInteropHelper(this).Handle);
+            var windowHandle = new WindowInteropHelper(this).Handle;
+            _gamepadService.AttachWindowHandle(windowHandle);
+            _hwndSource = HwndSource.FromHwnd(windowHandle);
+            _hwndSource?.AddHook(HandleWindowMessage);
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
@@ -96,8 +101,21 @@ public partial class MainWindow : Window
         {
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
+            _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
+            _hwndSource?.RemoveHook(HandleWindowMessage);
             _screensaver.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Forwards every window message to <see cref="IGamepadService.ProcessWindowMessage"/> so its
+    /// Raw Input quit-combo fallback (see <see cref="RawInputQuitComboListener"/>) can see
+    /// <c>WM_INPUT</c> — never marks anything handled, since nothing else needs to observe this.
+    /// </summary>
+    private IntPtr HandleWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        _gamepadService.ProcessWindowMessage(msg, lParam);
+        return IntPtr.Zero;
     }
 
     /// <summary>
@@ -125,7 +143,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Could not reach the Games API: {ex.Message}. Press Start to retry.");
+            SetStatus($"Could not reach the Games API: {ex.Message}. Press {RefreshButtonLabel} to retry.");
         }
     }
 
@@ -165,7 +183,7 @@ public partial class MainWindow : Window
     private async Task ShowUpdateModalAsync(AppUpdateInfo update)
     {
         _isBusy = true;
-        ShowOverlay($"Update v{update.NewVersion} is ready to install.\n\nA: Install & restart now    ·    B: Later");
+        ShowOverlay($"Update v{update.NewVersion} is ready to install.\n\n{ConfirmButtonLabel}: Install & restart now    ·    {CancelButtonLabel}: Later");
 
         _updateModalWait = new TaskCompletionSource<bool>();
         var installNow = await _updateModalWait.Task;
@@ -228,17 +246,17 @@ public partial class MainWindow : Window
     {
         HeaderText.Text = $"HoloNet — {_navigator.HeaderTitle}";
 
-        var backHint = _navigator.CanGoBack ? " · B: back" : "";
+        var backHint = _navigator.CanGoBack ? $" · {CancelButtonLabel}: back" : "";
         var baseStatus = _navigator.Cards.Count == 0
-            ? $"Nothing here. Press Start to refresh.{backHint}"
-            : $"D-pad/stick: move · A: select · Start: refresh · Hold Back+Start while playing: quit{backHint}";
+            ? $"Nothing here. Press {RefreshButtonLabel} to refresh.{backHint}"
+            : $"D-pad/stick: move · {ConfirmButtonLabel}: select · {RefreshButtonLabel}: refresh · Hold {QuitComboLabel} while playing: quit{backHint}";
 
         var missingEmulatorPlatforms = _gameLauncher.GetMissingEmulatorPlatforms();
         if (missingEmulatorPlatforms.Count > 0)
             baseStatus = $"⚠ Not installed: {string.Join(", ", missingEmulatorPlatforms)} — those games won't launch. · {baseStatus}";
 
         SetStatus(_pendingUpdate is not null && !_updateDismissedThisSession
-            ? $"🔔 Update v{FormatDisplayVersion(_pendingUpdate.NewVersion)} ready — Start: view · {baseStatus}"
+            ? $"🔔 Update v{FormatDisplayVersion(_pendingUpdate.NewVersion)} ready — {RefreshButtonLabel}: view · {baseStatus}"
             : baseStatus);
     }
 
@@ -309,6 +327,20 @@ public partial class MainWindow : Window
 
     private void OnGamepadButtonPressed(object? sender, GamepadButton button) =>
         Dispatcher.Invoke(() => HandleButton(button));
+
+    /// <summary>
+    /// Refreshes button-prompt text (status line, overlays) whenever the active controller
+    /// switches families (e.g. an Xbox pad connects after a DualSense was active) — see
+    /// <see cref="ConfirmButtonLabel"/> etc., which read <see cref="IGamepadService.CurrentControllerKind"/>
+    /// live, so this handler just needs to re-render whatever's currently on screen.
+    /// </summary>
+    private void OnControllerKindChanged(object? sender, GamepadKind kind) =>
+        Dispatcher.Invoke(UpdateHeaderAndStatus);
+
+    private string ConfirmButtonLabel => _gamepadService.CurrentControllerKind == GamepadKind.Xbox ? "A" : "Cross";
+    private string CancelButtonLabel => _gamepadService.CurrentControllerKind == GamepadKind.Xbox ? "B" : "Circle";
+    private string RefreshButtonLabel => _gamepadService.CurrentControllerKind == GamepadKind.Xbox ? "Start" : "Options";
+    private string QuitComboLabel => _gamepadService.CurrentControllerKind == GamepadKind.Xbox ? "Back+Start" : "Share+Options";
 
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
@@ -423,7 +455,7 @@ public partial class MainWindow : Window
     {
         if (!_gameLauncher.LaunchShortcut(shortcut.Shortcut.Url))
         {
-            ShowOverlay($"Couldn't open \"{shortcut.Title}\".\n\nPress A to dismiss.");
+            ShowOverlay($"Couldn't open \"{shortcut.Title}\".\n\nPress {ConfirmButtonLabel} to dismiss.");
             await WaitForDismissAsync();
             HideOverlay();
         }
@@ -441,7 +473,7 @@ public partial class MainWindow : Window
             var launchIntent = await _gamesApiClient.GetLaunchIntentAsync(game.Id);
             if (launchIntent is null)
             {
-                ShowOverlay($"\"{game.Title}\" has no network path configured and can't be launched.\n\nPress A to dismiss.");
+                ShowOverlay($"\"{game.Title}\" has no network path configured and can't be launched.\n\nPress {ConfirmButtonLabel} to dismiss.");
                 await WaitForDismissAsync();
                 return;
             }
@@ -449,7 +481,7 @@ public partial class MainWindow : Window
             var result = await StartShowcaseTimerAndLaunchAsync(launchIntent);
             if (result.Outcome != LaunchOutcome.Success)
             {
-                ShowOverlay($"Couldn't launch \"{game.Title}\":\n{result.ErrorMessage}\n\nPress A to dismiss.");
+                ShowOverlay($"Couldn't launch \"{game.Title}\":\n{result.ErrorMessage}\n\nPress {ConfirmButtonLabel} to dismiss.");
                 await WaitForDismissAsync();
             }
 
