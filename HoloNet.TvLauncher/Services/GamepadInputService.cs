@@ -66,6 +66,13 @@ public interface IGamepadService : IDisposable
     /// </summary>
     void ForceDirectInputReacquire();
 
+    /// <summary>
+    /// Must be forwarded from the main window's <c>WndProc</c>/<c>HwndSource</c> hook for every
+    /// message, so <c>WM_INPUT</c> messages reach the Raw Input fallback reader (see
+    /// <see cref="RawInputGamepadReader"/>). Messages other than <c>WM_INPUT</c> are ignored.
+    /// </summary>
+    void ProcessWindowMessage(int msg, IntPtr lParam);
+
     void Start();
 
     void Stop();
@@ -118,13 +125,18 @@ internal sealed class ComboHoldTracker
 /// them differently.
 ///
 /// Also detects a "quit current game" combo — Back+Start (XInput) / Share+Options
-/// (DirectInput) held together for <see cref="TvLauncherOptions.QuitHoldMilliseconds"/> —
+/// (DirectInput/Raw Input) held together for <see cref="TvLauncherOptions.QuitHoldMilliseconds"/> —
 /// raised as <see cref="GamepadButton.Quit"/>. This keeps working even while another
 /// application (the emulator) has window focus, since XInput polling is global and the
 /// DirectInput device is acquired in background/non-exclusive mode. Note: DirectInput can go
 /// completely blind to a Bluetooth-connected PS4/PS5 pad while certain emulators (e.g. PCSX2)
-/// are running; see the README's "PS4/PS5 controller over Bluetooth + PCSX2" section for the
-/// full story and current workaround.
+/// are running — and stays blind even after they close, since the pad's firmware itself
+/// switches into an "extended" Bluetooth HID report mode that DirectInput cannot parse; see the
+/// README's "PS4/PS5 controller over Bluetooth + PCSX2" section for the full story. To recover
+/// from that, every poll also reads <see cref="RawInputGamepadReader"/> (Windows Raw Input,
+/// which reads through the OS's own HID parser and understands whichever report format is
+/// currently active) and ORs its button/D-pad state on top of whatever DirectInput reports, so
+/// navigation keeps working either way.
 /// </summary>
 public sealed class GamepadInputService : IGamepadService
 {
@@ -173,6 +185,7 @@ public sealed class GamepadInputService : IGamepadService
 
     private readonly TvLauncherOptions _options;
     private readonly System.Windows.Threading.DispatcherTimer _timer;
+    private readonly RawInputGamepadReader _rawInput = new();
 
     private IntPtr _windowHandle;
     private DirectInput? _directInput;
@@ -212,6 +225,7 @@ public sealed class GamepadInputService : IGamepadService
     public GamepadInputService(IOptions<TvLauncherOptions> options)
     {
         _options = options.Value;
+        GamepadDebugLog.Enabled = _options.EnableGamepadDebugLogging;
         _timer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(Math.Max(_options.GamepadPollIntervalMs, 16))
@@ -222,7 +236,10 @@ public sealed class GamepadInputService : IGamepadService
     public void AttachWindowHandle(IntPtr windowHandle)
     {
         _windowHandle = windowHandle;
+        _rawInput.Attach(windowHandle);
     }
+
+    public void ProcessWindowMessage(int msg, IntPtr lParam) => _rawInput.HandleWindowMessage(msg, lParam);
 
     public void Start() => _timer.Start();
 
@@ -245,8 +262,31 @@ public sealed class GamepadInputService : IGamepadService
             return;
         }
 
-        if (TryPollDirectInput())
-            SetControllerKind(GamepadKind.PlayStation);
+        // DirectInput cannot parse a Bluetooth DualSense once it's switched into its "extended"
+        // HID report mode (see the class doc comment and RawInputGamepadReader), so its state
+        // may be genuinely absent (no device) or silently stale (device present but blind).
+        // Raw Input's button/D-pad readings are OR'd in on top so either source alone — or both
+        // agreeing — produces a working result; this never regresses pads DirectInput already
+        // reads fine (OR'ing with an all-false Raw Input snapshot is a no-op).
+        var directInputOk = TryGetDirectInputState(out var directInputButtons, out var directInputPov, out var stickX, out var stickY);
+        if (!directInputOk && !_rawInput.HasReceivedData)
+            return;
+
+        HandleDirectInputPov(_rawInput.Pov != -1 ? _rawInput.Pov : directInputPov);
+        HandleDirectInputButtons(MergeButtons(directInputButtons, _rawInput.Buttons));
+        HandleDirectInputStick(stickX, stickY);
+        SetControllerKind(GamepadKind.PlayStation);
+    }
+
+    private static bool[] MergeButtons(bool[] a, bool[] b)
+    {
+        var length = Math.Max(a.Length, b.Length);
+        var merged = new bool[length];
+
+        for (var i = 0; i < length; i++)
+            merged[i] = (i < a.Length && a[i]) || (i < b.Length && b[i]);
+
+        return merged;
     }
 
     #region XInput polling
@@ -282,6 +322,7 @@ public sealed class GamepadInputService : IGamepadService
                 pressedNow.HasFlag(XInputButtons.Back) && pressedNow.HasFlag(XInputButtons.Start),
                 _options.QuitHoldMilliseconds))
         {
+            GamepadDebugLog.Log("ButtonPressed=Quit (xinput combo)");
             ButtonPressed?.Invoke(this, GamepadButton.Quit);
         }
 
@@ -301,8 +342,13 @@ public sealed class GamepadInputService : IGamepadService
 
     #region DirectInput polling
 
-    private bool TryPollDirectInput()
+    private bool TryGetDirectInputState(out bool[] buttons, out int pov, out int x, out int y)
     {
+        buttons = [];
+        pov = -1;
+        x = 32767;
+        y = 32767;
+
         if (_directInputJoystick is null && !TryInitializeDirectInput())
             return false;
 
@@ -310,7 +356,10 @@ public sealed class GamepadInputService : IGamepadService
         {
             _directInputJoystick!.Poll();
             var state = _directInputJoystick.GetCurrentState();
-            HandleDirectInputState(state);
+            buttons = state.Buttons;
+            pov = state.PointOfViewControllers.Length > 0 ? state.PointOfViewControllers[0] : -1;
+            x = state.X;
+            y = state.Y;
             return true;
         }
         catch (SharpDX.SharpDXException)
@@ -380,13 +429,6 @@ public sealed class GamepadInputService : IGamepadService
         }
     }
 
-    private void HandleDirectInputState(JoystickState state)
-    {
-        HandleDirectInputPov(state.PointOfViewControllers.Length > 0 ? state.PointOfViewControllers[0] : -1);
-        HandleDirectInputButtons(state.Buttons);
-        HandleDirectInputStick(state.X, state.Y);
-    }
-
     private void HandleDirectInputPov(int pov)
     {
         // Standard hat-switch encoding: hundredths of a degree, 0=Up, 9000=Right, 18000=Down,
@@ -418,7 +460,10 @@ public sealed class GamepadInputService : IGamepadService
         RaiseButtonIfConfigured(buttons, mappings, "Refresh", GamepadButton.Refresh);
 
         if (_directInputQuitCombo.Evaluate(IsQuitComboPressed(buttons, mappings), _options.QuitHoldMilliseconds))
+        {
+            GamepadDebugLog.Log("ButtonPressed=Quit (directinput/rawinput combo)");
             ButtonPressed?.Invoke(this, GamepadButton.Quit);
+        }
 
         _previousDirectInputButtons = (bool[])buttons.Clone();
     }
@@ -479,13 +524,19 @@ public sealed class GamepadInputService : IGamepadService
     private void RaiseOnRisingEdge(bool isPressedNow, bool wasPressed, GamepadButton button)
     {
         if (isPressedNow && !wasPressed)
+        {
+            GamepadDebugLog.Log($"ButtonPressed={button} (edge)");
             ButtonPressed?.Invoke(this, button);
+        }
     }
 
     private void RaiseOnStickEdge(bool isPressedNow, ref bool wasPressed, GamepadButton button)
     {
         if (isPressedNow && !wasPressed)
+        {
+            GamepadDebugLog.Log($"ButtonPressed={button} (stick)");
             ButtonPressed?.Invoke(this, button);
+        }
 
         wasPressed = isPressedNow;
     }
@@ -495,5 +546,6 @@ public sealed class GamepadInputService : IGamepadService
         _timer.Stop();
         _directInputJoystick?.Dispose();
         _directInput?.Dispose();
+        _rawInput.Dispose();
     }
 }

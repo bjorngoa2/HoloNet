@@ -147,40 +147,39 @@ navigation worked fine at the picker menu a moment earlier. **Wired/USB controll
 have this problem** — USB HID allows multiple simultaneous non-exclusive readers, so both
 PCSX2 and TvLauncher can read the same physical pad at once.
 
-**Fix: switch PCSX2 to DirectInput instead of SDL for Bluetooth controllers.**
+**Fixed — see [`docs/tvlauncher-dualsense-bluetooth-fix.md`](../docs/tvlauncher-dualsense-bluetooth-fix.md)
+for the full investigation.** In short: once PCSX2/SDL touches a Bluetooth DualSense (to use
+its motion/adaptive-trigger/touchpad features), the pad switches from its "basic" HID input
+report (ID `1`, which Windows' generic HID parser reads fine) to a Bluetooth-only "extended"
+report (ID `0x31`, 78 bytes) that Windows' generic parser has **no** usage definitions for at
+all — and the pad stays in that mode, even after the game closes, until it's fully
+power-cycled. This is why the controller previously went completely unresponsive in
+TvLauncher (not just the quit combo — all navigation) immediately after quitting a game,
+recoverable only by turning the pad off and back on.
 
-1. In PCSX2, go to **Settings → Controllers**.
-2. Under **Input Sources**, uncheck **SDL** and check **DInput** (DirectInput)/RawInput
-   (naming varies slightly by PCSX2 version).
-3. Go to the controller port binding page and re-bind your buttons — they'll now appear
-   under the DInput device instead of the SDL one.
-4. Re-bind any hotkeys (e.g. an in-emulator Exit/Shutdown binding) under DInput too.
+`RawInputGamepadReader` (a Raw Input-based reader that runs alongside DirectInput, its
+results OR'd together each poll) now falls back to a manually-parsed, CRC-32-validated,
+exact vendor/product/report-matched parser (`KnownGamepadReportFormats`) for that specific
+report shape whenever the generic parse fails — so the pad keeps working immediately after
+quitting, no power-cycle needed. Two earlier attempts at fixing this are kept below for
+historical context, since they're what led to correctly diagnosing the real root cause:
 
-With DInput enabled, PCSX2 shares the Bluetooth controller non-exclusively, the same as a
-wired pad — TvLauncher's quit-combo and general input keep working while a game is running.
-This was confirmed working end-to-end once on a Bluetooth-paired DualSense, but turned out
-**not to be reliable**: on a later session, PCSX2's DInput binding page failed to detect any
-input from the same DualSense at all (auto-mapping reported "No generic bindings were
-generated for device", and manual rebind capture saw nothing either), even though the
-controller worked fine in TvLauncher and over USB. Switching back to SDL (PCSX2's default)
-restores in-game input immediately, at the cost of TvLauncher going blind again during
-gameplay. Root cause is believed to be a DirectInput/legacy-joystick compatibility gap with
-the DualSense's Bluetooth report format, not the exclusivity issue this fix originally
-targeted.
+- **Attempt 1 — switch PCSX2 to DirectInput for Bluetooth controllers.** Based on the
+  (incorrect) theory that SDL was opening the Bluetooth HID device exclusively, blocking
+  TvLauncher's own DirectInput polling. Worked once, then failed to detect any input at all
+  in a later session (PCSX2's DInput binding page reported "No generic bindings were
+  generated for device") — abandoned once it proved unreliable.
+- **Attempt 2 — let PCSX2 handle the quit itself via a global hotkey**, sidestepping
+  TvLauncher's input entirely by having PCSX2 (Settings → Hotkeys → "Open Pause Menu") detect
+  the quit itself via its own already-working SDL input path. A parallel Raw Input-based quit
+  detector (`RawInputQuitComboListener`, shipped in `v0.3.0`) was also tried at this point but
+  reported no detection at all in live testing, and was archived on the
+  `archive/rawinput-quit-combo` branch without being debugged further.
 
-**Current approach: let PCSX2 handle the quit itself via a global hotkey**, instead of having
-TvLauncher try to detect the combo. PCSX2 already reads the Bluetooth pad reliably via SDL
-for actual gameplay (that's confirmed working), so binding a PCSX2 **global hotkey** —
-Settings → Hotkeys (not the per-game controller bindings) — to "Open Pause Menu" sidesteps
-TvLauncher's DirectInput blindness entirely, since PCSX2 itself is doing the detection with
-its own already-working input backend. This is a one-time setting that applies to every
-game, not a per-game reconfiguration. A prior attempt at a Windows Raw Input-based fallback
-(`RawInputQuitComboListener`, reading HID reports directly instead of going through
-DirectInput) was implemented and shipped in `v0.3.0`, but produced no detection at all when
-tested live — never debugged further since the PCSX2-hotkey approach above avoids the
-problem entirely. That code is preserved on the `archive/rawinput-quit-combo` branch in case
-it's worth revisiting later (e.g. with debug logging to see whether Raw Input registration
-or usage-ID parsing was the actual failure point).
+Neither of these actually addressed the real problem: TvLauncher's input wasn't blocked by
+exclusivity, it was blind to a specific HID report format the pad switches into. That was
+only found by adding the opt-in diagnostic logging described in the fix doc above, which is
+what makes the current fix reliable rather than another guess.
 
 ## Deploying to the TV PC
 
@@ -221,12 +220,12 @@ fails" under Settings.
   cover art support is added).
 - No authentication — relies on the LAN-only nature of `*.goa.no` services, consistent with
   the rest of HoloNet.
-- **Raw Input quit-combo fallback (abandoned, code archived).** A Windows Raw Input-based
-  listener (`RegisterRawInputDevices`/`WM_INPUT`) was implemented to detect the quit combo
-  independently of DirectInput, since DirectInput can go completely silent for a
-  Bluetooth-connected DualSense while PCSX2 is running (see "PS4/PS5 controller over
-  Bluetooth + PCSX2" above). It shipped in `v0.3.0` but produced no detection at all in live
-  testing and was reverted from `main` rather than debugged further, since binding a PCSX2
-  global hotkey (see above) sidesteps the problem entirely by letting PCSX2's own
-  already-working input backend do the detection. The code is preserved on the
-  `archive/rawinput-quit-combo` branch in case it's worth revisiting.
+- **Raw Input fallback now active.** `RawInputGamepadReader` reads gamepad state directly via
+  `RegisterRawInputDevices`/`WM_INPUT`, running alongside DirectInput, specifically to keep
+  working through a Bluetooth DualSense's HID report-format switch that leaves DirectInput
+  and Windows' own generic HID parsing unable to read the pad at all — see
+  [`docs/tvlauncher-dualsense-bluetooth-fix.md`](../docs/tvlauncher-dualsense-bluetooth-fix.md)
+  for the full root cause and fix. An earlier, quit-combo-only version of this idea
+  (`RawInputQuitComboListener`, `v0.3.0`) reported no detection at all in testing and was
+  archived on `archive/rawinput-quit-combo` — the current, more general reader superseded it
+  once the real root cause was understood.
