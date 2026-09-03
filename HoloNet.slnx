@@ -4,6 +4,7 @@
   <Project Path="HoloNet.Photos/HoloNet.Photos.csproj" />
   <Project Path="HoloNet.Portal/HoloNet.Portal.csproj" />
   <Project Path="HoloNet.Shared/HoloNet.Shared.csproj" />
+  <Project Path="HoloNet.TvLauncher.Tests/HoloNet.TvLauncher.Tests.csproj" />
   <Project Path="HoloNet.TvLauncher/HoloNet.TvLauncher.csproj" />
   <Project Path="HoloNet.Video/HoloNet.Video.csproj" />
 </Solution>

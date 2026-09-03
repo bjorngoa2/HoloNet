@@ -85,7 +85,7 @@ internal sealed class RawInputGamepadReader : IDisposable
     /// against.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    private struct RawInputDeviceInfoHid
+    internal struct RawInputDeviceInfoHid
     {
         public uint Size;
         public uint Type;
