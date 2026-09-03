@@ -29,7 +29,6 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private AppUpdateInfo? _pendingUpdate;
     private bool _updateDismissedThisSession;
-    private HwndSource? _hwndSource;
 
     /// <summary>
     /// Dispatches "the player selected this card" to the right behavior for its concrete type
@@ -90,8 +89,6 @@ public partial class MainWindow : Window
         {
             var windowHandle = new WindowInteropHelper(this).Handle;
             _gamepadService.AttachWindowHandle(windowHandle);
-            _hwndSource = HwndSource.FromHwnd(windowHandle);
-            _hwndSource?.AddHook(HandleWindowMessage);
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
@@ -102,20 +99,8 @@ public partial class MainWindow : Window
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
             _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
-            _hwndSource?.RemoveHook(HandleWindowMessage);
             _screensaver.Dispose();
         };
-    }
-
-    /// <summary>
-    /// Forwards every window message to <see cref="IGamepadService.ProcessWindowMessage"/> so its
-    /// Raw Input quit-combo fallback (see <see cref="RawInputQuitComboListener"/>) can see
-    /// <c>WM_INPUT</c> — never marks anything handled, since nothing else needs to observe this.
-    /// </summary>
-    private IntPtr HandleWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        _gamepadService.ProcessWindowMessage(msg, lParam);
-        return IntPtr.Zero;
     }
 
     /// <summary>

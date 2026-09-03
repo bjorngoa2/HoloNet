@@ -54,15 +54,6 @@ public interface IGamepadService : IDisposable
     /// </summary>
     void AttachWindowHandle(IntPtr windowHandle);
 
-    /// <summary>
-    /// Forwards a WPF window message (via <c>HwndSource.AddHook</c> on the host window) so the
-    /// Raw Input quit-combo fallback — see <see cref="RawInputQuitComboListener"/> — can see
-    /// <c>WM_INPUT</c> messages. Harmless to call with any other message; only <c>WM_INPUT</c>
-    /// is acted on. Call <see cref="AttachWindowHandle"/> first so Raw Input registration has
-    /// already happened before messages start arriving.
-    /// </summary>
-    void ProcessWindowMessage(int msg, IntPtr lParam);
-
     void Start();
 
     void Stop();
@@ -71,9 +62,7 @@ public interface IGamepadService : IDisposable
 /// <summary>
 /// Tracks a button combo that must be held continuously for a configured duration before
 /// firing once — used for the "quit current game" combo so it can't be triggered by a
-/// single accidental press, and won't repeat-fire while still held afterwards. Shared between
-/// <see cref="GamepadInputService"/>'s XInput/DirectInput polling and
-/// <see cref="RawInputQuitComboListener"/>'s independent Raw Input detection path.
+/// single accidental press, and won't repeat-fire while still held afterwards.
 /// </summary>
 internal sealed class ComboHoldTracker
 {
@@ -120,11 +109,10 @@ internal sealed class ComboHoldTracker
 /// (DirectInput) held together for <see cref="TvLauncherOptions.QuitHoldMilliseconds"/> —
 /// raised as <see cref="GamepadButton.Quit"/>. This keeps working even while another
 /// application (the emulator) has window focus, since XInput polling is global and the
-/// DirectInput device is acquired in background/non-exclusive mode. A third, independent
-/// path — <see cref="RawInputQuitComboListener"/> — additionally detects just this quit combo
-/// via the Windows Raw Input API, since DirectInput can go completely blind to a
-/// Bluetooth-connected PS4/PS5 pad while certain emulators (e.g. PCSX2) are running; see the
-/// README's "PS4/PS5 controller over Bluetooth + PCSX2" section for the full story.
+/// DirectInput device is acquired in background/non-exclusive mode. Note: DirectInput can go
+/// completely blind to a Bluetooth-connected PS4/PS5 pad while certain emulators (e.g. PCSX2)
+/// are running; see the README's "PS4/PS5 controller over Bluetooth + PCSX2" section for the
+/// full story and current workaround.
 /// </summary>
 public sealed class GamepadInputService : IGamepadService
 {
@@ -194,7 +182,6 @@ public sealed class GamepadInputService : IGamepadService
 
     private readonly ComboHoldTracker _xInputQuitCombo = new();
     private readonly ComboHoldTracker _directInputQuitCombo = new();
-    private readonly RawInputQuitComboListener _rawInputQuitCombo;
 
     public event EventHandler<GamepadButton>? ButtonPressed;
     public event EventHandler<GamepadKind>? ControllerKindChanged;
@@ -218,28 +205,16 @@ public sealed class GamepadInputService : IGamepadService
             Interval = TimeSpan.FromMilliseconds(Math.Max(_options.GamepadPollIntervalMs, 16))
         };
         _timer.Tick += (_, _) => Poll();
-        _rawInputQuitCombo = new RawInputQuitComboListener(
-            () => _options.DirectInputButtonMappings,
-            () => _options.QuitHoldMilliseconds,
-            () => ButtonPressed?.Invoke(this, GamepadButton.Quit));
     }
 
     public void AttachWindowHandle(IntPtr windowHandle)
     {
         _windowHandle = windowHandle;
-        _rawInputQuitCombo.Attach(windowHandle);
     }
 
     public void Start() => _timer.Start();
 
     public void Stop() => _timer.Stop();
-
-    /// <summary>
-    /// Forwards a WPF window message to the Raw Input quit-combo listener — must be wired up by
-    /// the host window (e.g. via <c>HwndSource.AddHook</c>) once <see cref="AttachWindowHandle"/>
-    /// has registered for Raw Input, so <c>WM_INPUT</c> messages actually reach this service.
-    /// </summary>
-    public void ProcessWindowMessage(int msg, IntPtr lParam) => _rawInputQuitCombo.HandleWindowMessage(msg, lParam);
 
     private void Poll()
     {
@@ -499,6 +474,5 @@ public sealed class GamepadInputService : IGamepadService
         _timer.Stop();
         _directInputJoystick?.Dispose();
         _directInput?.Dispose();
-        _rawInputQuitCombo.Dispose();
     }
 }

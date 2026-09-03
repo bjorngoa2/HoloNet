@@ -166,9 +166,23 @@ controller worked fine in TvLauncher and over USB. Switching back to SDL (PCSX2'
 restores in-game input immediately, at the cost of TvLauncher going blind again during
 gameplay. Root cause is believed to be a DirectInput/legacy-joystick compatibility gap with
 the DualSense's Bluetooth report format, not the exclusivity issue this fix originally
-targeted — see the Raw Input backlog item below for the real long-term fix.
+targeted.
 
+**Current approach: let PCSX2 handle the quit itself via a global hotkey**, instead of having
+TvLauncher try to detect the combo. PCSX2 already reads the Bluetooth pad reliably via SDL
+for actual gameplay (that's confirmed working), so binding a PCSX2 **global hotkey** —
+Settings → Hotkeys (not the per-game controller bindings) — to "Open Pause Menu" sidesteps
+TvLauncher's DirectInput blindness entirely, since PCSX2 itself is doing the detection with
+its own already-working input backend. This is a one-time setting that applies to every
+game, not a per-game reconfiguration. A prior attempt at a Windows Raw Input-based fallback
+(`RawInputQuitComboListener`, reading HID reports directly instead of going through
+DirectInput) was implemented and shipped in `v0.3.0`, but produced no detection at all when
+tested live — never debugged further since the PCSX2-hotkey approach above avoids the
+problem entirely. That code is preserved on the `archive/rawinput-quit-combo` branch in case
+it's worth revisiting later (e.g. with debug logging to see whether Raw Input registration
+or usage-ID parsing was the actual failure point).
 
+## Deploying to the TV PC
 
 1. `dotnet publish HoloNet.TvLauncher -c Release -r win-x64 --self-contained false -o publish`
 2. Copy the `publish` folder to the TV PC, edit `appsettings.json` there for the real API
@@ -207,17 +221,12 @@ fails" under Settings.
   cover art support is added).
 - No authentication — relies on the LAN-only nature of `*.goa.no` services, consistent with
   the rest of HoloNet.
-- **Raw Input quit-combo fallback (implemented).** The quit combo (Options+Share /
-  Back+Start) is now additionally detected via the Windows **Raw Input API**
-  (`RegisterRawInputDevices`/`WM_INPUT`, see `RawInputQuitComboListener`), running alongside
-  the existing XInput/DirectInput polling rather than replacing it — wired controllers are
-  unaffected either way. This exists specifically because DirectInput can go completely
-  silent for a Bluetooth-connected DualSense while PCSX2 is running (see "PS4/PS5
-  controller over Bluetooth + PCSX2" above), regardless of which PCSX2 input source is
-  selected; Raw Input reads HID reports through a different Windows subsystem (the same one
-  SDL itself uses internally for exactly this kind of multi-consumer scenario) and keeps
-  working even when DirectInput can't see the pad at all. Deliberately scoped to *only* the
-  quit combo, not full menu navigation, to minimize new surface area — **not yet verified
-  live on Bluetooth hardware**; needs testing with a Bluetooth DualSense + PCSX2 running
-  before being considered confirmed-working (see the earlier DInput fix, which also looked
-  solved before turning out to be unreliable).
+- **Raw Input quit-combo fallback (abandoned, code archived).** A Windows Raw Input-based
+  listener (`RegisterRawInputDevices`/`WM_INPUT`) was implemented to detect the quit combo
+  independently of DirectInput, since DirectInput can go completely silent for a
+  Bluetooth-connected DualSense while PCSX2 is running (see "PS4/PS5 controller over
+  Bluetooth + PCSX2" above). It shipped in `v0.3.0` but produced no detection at all in live
+  testing and was reverted from `main` rather than debugged further, since binding a PCSX2
+  global hotkey (see above) sidesteps the problem entirely by letting PCSX2's own
+  already-working input backend do the detection. The code is preserved on the
+  `archive/rawinput-quit-combo` branch in case it's worth revisiting.
