@@ -464,6 +464,7 @@ public partial class MainWindow : Window
             }
 
             var result = await StartShowcaseTimerAndLaunchAsync(launchIntent);
+            _gamepadService.ForceDirectInputReacquire();
             if (result.Outcome != LaunchOutcome.Success)
             {
                 ShowOverlay($"Couldn't launch \"{game.Title}\":\n{result.ErrorMessage}\n\nPress {ConfirmButtonLabel} to dismiss.");

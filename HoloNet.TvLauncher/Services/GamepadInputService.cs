@@ -54,6 +54,18 @@ public interface IGamepadService : IDisposable
     /// </summary>
     void AttachWindowHandle(IntPtr windowHandle);
 
+    /// <summary>
+    /// Forces the next poll to fully re-enumerate and re-acquire the DirectInput device from
+    /// scratch, discarding whatever instance is currently cached. Call this whenever an
+    /// emulator process that may have held the pad (e.g. via SDL/HIDAPI) exits: DirectInput's
+    /// own <c>Poll()</c>/<c>GetCurrentState()</c> calls don't reliably throw just because
+    /// another application briefly held exclusive access to a Bluetooth HID device — they can
+    /// keep "succeeding" with stale, never-updating state instead — so the existing
+    /// throw-triggered auto-recovery in <see cref="Poll"/> isn't guaranteed to kick in on its
+    /// own once the pad becomes readable again.
+    /// </summary>
+    void ForceDirectInputReacquire();
+
     void Start();
 
     void Stop();
@@ -215,6 +227,15 @@ public sealed class GamepadInputService : IGamepadService
     public void Start() => _timer.Start();
 
     public void Stop() => _timer.Stop();
+
+    public void ForceDirectInputReacquire()
+    {
+        _directInputJoystick?.Dispose();
+        _directInputJoystick = null;
+        _directInput?.Dispose();
+        _directInput = null;
+        _pollsSinceDirectInputInitAttempt = 0;
+    }
 
     private void Poll()
     {
