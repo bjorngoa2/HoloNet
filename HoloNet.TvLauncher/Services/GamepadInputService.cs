@@ -225,6 +225,7 @@ public sealed class GamepadInputService : IGamepadService
     public GamepadInputService(IOptions<TvLauncherOptions> options)
     {
         _options = options.Value;
+        GamepadDebugLog.Enabled = _options.EnableGamepadDebugLogging;
         _timer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(Math.Max(_options.GamepadPollIntervalMs, 16))
@@ -321,6 +322,7 @@ public sealed class GamepadInputService : IGamepadService
                 pressedNow.HasFlag(XInputButtons.Back) && pressedNow.HasFlag(XInputButtons.Start),
                 _options.QuitHoldMilliseconds))
         {
+            GamepadDebugLog.Log("ButtonPressed=Quit (xinput combo)");
             ButtonPressed?.Invoke(this, GamepadButton.Quit);
         }
 
@@ -458,7 +460,10 @@ public sealed class GamepadInputService : IGamepadService
         RaiseButtonIfConfigured(buttons, mappings, "Refresh", GamepadButton.Refresh);
 
         if (_directInputQuitCombo.Evaluate(IsQuitComboPressed(buttons, mappings), _options.QuitHoldMilliseconds))
+        {
+            GamepadDebugLog.Log("ButtonPressed=Quit (directinput/rawinput combo)");
             ButtonPressed?.Invoke(this, GamepadButton.Quit);
+        }
 
         _previousDirectInputButtons = (bool[])buttons.Clone();
     }
@@ -519,13 +524,19 @@ public sealed class GamepadInputService : IGamepadService
     private void RaiseOnRisingEdge(bool isPressedNow, bool wasPressed, GamepadButton button)
     {
         if (isPressedNow && !wasPressed)
+        {
+            GamepadDebugLog.Log($"ButtonPressed={button} (edge)");
             ButtonPressed?.Invoke(this, button);
+        }
     }
 
     private void RaiseOnStickEdge(bool isPressedNow, ref bool wasPressed, GamepadButton button)
     {
         if (isPressedNow && !wasPressed)
+        {
+            GamepadDebugLog.Log($"ButtonPressed={button} (stick)");
             ButtonPressed?.Invoke(this, button);
+        }
 
         wasPressed = isPressedNow;
     }

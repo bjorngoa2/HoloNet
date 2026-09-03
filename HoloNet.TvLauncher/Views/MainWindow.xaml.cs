@@ -364,6 +364,8 @@ public partial class MainWindow : Window
 
     private async void HandleButton(GamepadButton button)
     {
+        GamepadDebugLog.Log($"[MainWindow] HandleButton({button}) isBusy={_isBusy} screensaverActive={_screensaver.IsActive} cardCount={_navigator.Cards.Count} selectedIndex={_selectedIndex}");
+
         _screensaver.NotifyActivity();
 
         if (_screensaver.IsActive)
@@ -438,10 +440,14 @@ public partial class MainWindow : Window
     {
         var next = _selectedIndex + delta;
         if (next < 0 || next >= _navigator.Cards.Count)
+        {
+            GamepadDebugLog.Log($"[MainWindow] Move({delta}) ignored: next={next} out of range (count={_navigator.Cards.Count})");
             return;
+        }
 
         _selectedIndex = next;
         UpdateSelection();
+        GamepadDebugLog.Log($"[MainWindow] Move({delta}) selectedIndex now {_selectedIndex}");
     }
 
     private Task LaunchSelectedAsync()

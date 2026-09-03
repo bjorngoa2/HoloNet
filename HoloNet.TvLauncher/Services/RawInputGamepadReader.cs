@@ -1,4 +1,3 @@
-using System.IO;
 using System.Runtime.InteropServices;
 
 namespace HoloNet.TvLauncher.Services;
@@ -26,9 +25,9 @@ namespace HoloNet.TvLauncher.Services;
 /// reliably enough in practice. Button identification reuses
 /// <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/> (same assumption as
 /// the earlier, since-reverted quit-combo-only attempt: HID button Usage IDs are 1-based and
-/// align with DirectInput's 0-based button array indices) — this time with debug logging (see
-/// <see cref="LogPath"/>) so that assumption can actually be verified against live hardware
-/// instead of shipping unverified again.
+/// align with DirectInput's 0-based button array indices) — with opt-in debug logging (see
+/// <see cref="GamepadDebugLog"/>) so that assumption can actually be verified against live
+/// hardware instead of shipping unverified again.
 /// </summary>
 internal sealed class RawInputGamepadReader : IDisposable
 {
@@ -46,8 +45,13 @@ internal sealed class RawInputGamepadReader : IDisposable
     private const int HidPStatusSuccess = 0x00110000;
     private const int MaxTrackedButtons = 32;
 
-    /// <summary>Log file next to the exe — deliberately verbose-but-deduped, for one-off diagnosis.</summary>
-    private static readonly string LogPath = Path.Combine(AppContext.BaseDirectory, "rawinput-debug.log");
+    // DualSense Bluetooth "extended" input report — see class doc comment above the fallback
+    // parser below. Values confirmed against Linux's drivers/hid/hid-playstation.c.
+    private const byte DualSenseBtExtendedReportId = 0x31;
+    private const int DualSenseBtExtendedReportSize = 78;
+    private const int DualSenseBtButtons0Offset = 9;
+    private const int DualSenseBtButtons1Offset = 10;
+    private const int DualSenseBtButtons2Offset = 11;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RawInputDevice
@@ -109,6 +113,10 @@ internal sealed class RawInputGamepadReader : IDisposable
 
     private bool[] _lastLoggedButtons = [];
     private int _lastLoggedPov = int.MinValue;
+    private byte _lastReportId = 0xFF;
+    private int _lastReportLength = -1;
+    private int _lastButtonStatus = int.MinValue;
+    private int _lastPovStatus = int.MinValue;
 
     /// <summary>Current button state, indexed to match <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/>. Never null; all-false when no data has arrived yet.</summary>
     public bool[] Buttons { get; private set; } = new bool[MaxTrackedButtons];
@@ -131,7 +139,7 @@ internal sealed class RawInputGamepadReader : IDisposable
         };
 
         var registered = RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf<RawInputDevice>());
-        TryLog($"Attach windowHandle=0x{windowHandle:X} registered={registered} lastError={(registered ? 0 : Marshal.GetLastWin32Error())}");
+        GamepadDebugLog.Log($"Attach windowHandle=0x{windowHandle:X} registered={registered} lastError={(registered ? 0 : Marshal.GetLastWin32Error())}");
     }
 
     public void HandleWindowMessage(int msg, IntPtr lParam)
@@ -147,7 +155,7 @@ internal sealed class RawInputGamepadReader : IDisposable
         {
             // Defensive: a malformed/unexpected raw input payload must never crash the picker's
             // message loop — this is a best-effort fallback signal, not a critical path.
-            TryLog($"ProcessRawInput threw: {ex}");
+            GamepadDebugLog.Log($"ProcessRawInput threw: {ex}");
         }
     }
 
@@ -210,9 +218,44 @@ internal sealed class RawInputGamepadReader : IDisposable
             // value (commonly 8) when centered; anything outside 0-7 is treated as centered.
             var pov = povStatus == HidPStatusSuccess && hatValue <= 7 ? (int)hatValue * 4500 : -1;
 
+            // Confirmed via live testing: as soon as something (SDL/PCSX2) touches a Bluetooth
+            // DualSense, it switches from its "basic" report (ID 1, which the generic HidP_*
+            // calls above parse fine) to its "extended" report (ID 0x31/49, 78 bytes) — and it
+            // stays there even after that app closes, until the pad is power-cycled. Windows'
+            // preparsed HID descriptor has no usage collection for report ID 0x31 at all, so
+            // HidP_GetUsages/GetUsageValue return HIDP_STATUS_INCOMPATIBLE_REPORT_ID (0xC011000A)
+            // for it — this is a structural gap, not a bug in the calls above. Parse that report
+            // manually instead, using the fixed byte layout Sony's own Linux driver
+            // (drivers/hid/hid-playstation.c, dualsense_parse_report) uses for it, so the pad
+            // keeps working without ever needing a manual power-cycle.
+            if (buttonStatus != HidPStatusSuccess && reportLength == DualSenseBtExtendedReportSize
+                && report[0] == DualSenseBtExtendedReportId)
+            {
+                ParseDualSenseBluetoothExtendedReport(report, buttons, out pov);
+            }
+
             Buttons = buttons;
             Pov = pov;
             HasReceivedData = true;
+
+            // Diagnostic-only: log whenever the report's identity (ID/length) or whether we can
+            // successfully parse it changes at all, independent of whether the *parsed* button/
+            // pov values changed. This is deliberately NOT deduped against button/pov state,
+            // because a device that has switched HID report formats (e.g. a Bluetooth DualSense
+            // entering its "extended" mode) can keep sending WM_INPUT messages that consistently
+            // fail to parse (buttonStatus/povStatus != success) while the last successfully
+            // parsed Buttons/Pov stay frozen — LogIfChanged alone would go completely silent in
+            // that case even though data is still arriving, hiding the real failure mode.
+            var reportId = report.Length > 0 ? report[0] : (byte)0xFF;
+            if (reportId != _lastReportId || reportLength != _lastReportLength
+                || buttonStatus != _lastButtonStatus || povStatus != _lastPovStatus)
+            {
+                _lastReportId = reportId;
+                _lastReportLength = reportLength;
+                _lastButtonStatus = buttonStatus;
+                _lastPovStatus = povStatus;
+                GamepadDebugLog.Log($"report reportId={reportId} length={reportLength} buttonStatus=0x{buttonStatus:X} povStatus=0x{povStatus:X}");
+            }
 
             LogIfChanged(buttons, pov);
         }
@@ -220,6 +263,46 @@ internal sealed class RawInputGamepadReader : IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    /// <summary>
+    /// Manually parses a DualSense Bluetooth "extended" input report (ID 0x31, 78 bytes),
+    /// which Windows' generic HID parser cannot handle (see the call site above). Byte offsets
+    /// and bit masks below match <c>struct dualsense_input_report</c> and the
+    /// <c>DS_BUTTONS0_*</c>/<c>DS_BUTTONS1_*</c>/<c>DS_BUTTONS2_*</c> masks in Linux's
+    /// drivers/hid/hid-playstation.c: the report's first 2 bytes are the report ID and a
+    /// Bluetooth sequence/tag byte, after which the common DualSense report layout begins —
+    /// button bytes land at offsets 9-11 of the full report. Button indices are assigned to
+    /// match the same 0-based ordering the generic HID Usage path already produces (confirmed
+    /// live: Usage ID 2 → Cross/Confirm at index 1, Usage ID 3 → Circle/Cancel at index 2, etc.),
+    /// so this fallback plugs into <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/>
+    /// without any special-casing further up the stack.
+    /// </summary>
+    private static void ParseDualSenseBluetoothExtendedReport(byte[] report, bool[] buttons, out int pov)
+    {
+        var buttons0 = report[DualSenseBtButtons0Offset];
+        var buttons1 = report[DualSenseBtButtons1Offset];
+        var buttons2 = report[DualSenseBtButtons2Offset];
+
+        buttons[0] = (buttons0 & 0x10) != 0; // Square
+        buttons[1] = (buttons0 & 0x20) != 0; // Cross
+        buttons[2] = (buttons0 & 0x40) != 0; // Circle
+        buttons[3] = (buttons0 & 0x80) != 0; // Triangle
+        buttons[4] = (buttons1 & 0x01) != 0; // L1
+        buttons[5] = (buttons1 & 0x02) != 0; // R1
+        buttons[6] = (buttons1 & 0x04) != 0; // L2 (digital)
+        buttons[7] = (buttons1 & 0x08) != 0; // R2 (digital)
+        buttons[8] = (buttons1 & 0x10) != 0; // Create/Share
+        buttons[9] = (buttons1 & 0x20) != 0; // Options
+        buttons[10] = (buttons1 & 0x40) != 0; // L3
+        buttons[11] = (buttons1 & 0x80) != 0; // R3
+        buttons[12] = (buttons2 & 0x01) != 0; // PS/Home
+        buttons[13] = (buttons2 & 0x02) != 0; // Touchpad click
+
+        // Low nibble of buttons0 is the D-pad hat switch: 0-7 for the eight directions, 8 for
+        // centered — same convention as the generic HidP_GetUsageValue path this replaces.
+        var hat = buttons0 & 0x0F;
+        pov = hat <= 7 ? hat * 4500 : -1;
     }
 
     private void LogIfChanged(bool[] buttons, int pov)
@@ -231,7 +314,7 @@ internal sealed class RawInputGamepadReader : IDisposable
         _lastLoggedButtons = (bool[])buttons.Clone();
 
         var pressedIndices = string.Join(",", Enumerable.Range(0, buttons.Length).Where(i => buttons[i]));
-        TryLog($"state pov={pov} pressed=[{pressedIndices}]");
+        GamepadDebugLog.Log($"state pov={pov} pressed=[{pressedIndices}]");
     }
 
     private IntPtr GetOrFetchPreparsedData(IntPtr device)
@@ -252,20 +335,8 @@ internal sealed class RawInputGamepadReader : IDisposable
         }
 
         _preparsedDataByDevice[device] = buffer;
-        TryLog($"Registered preparsed data for device=0x{device:X}");
+        GamepadDebugLog.Log($"Registered preparsed data for device=0x{device:X}");
         return buffer;
-    }
-
-    private static void TryLog(string message)
-    {
-        try
-        {
-            File.AppendAllText(LogPath, $"{DateTime.Now:O} {message}{Environment.NewLine}");
-        }
-        catch
-        {
-            // Best-effort diagnostics only — never let logging failures affect input handling.
-        }
     }
 
     public void Dispose()

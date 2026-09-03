@@ -144,6 +144,18 @@ public class TvLauncherOptions
     /// <c>vpk upload github</c> publishes releases to (see <c>.github/workflows/release.yml</c>).
     /// </summary>
     public string UpdateRepositoryUrl { get; set; } = "https://github.com/bjorngoa2/HoloNet";
+
+    /// <summary>
+    /// Opt-in: when <c>true</c>, gamepad input handling (raw HID reports, decoded button/D-pad
+    /// state, and the UI's reaction to each button event) is logged to <c>gamepad-debug.log</c>
+    /// next to the exe, for diagnosing controller issues with a specific pad/emulator
+    /// combination — e.g. tracking down which HID report format a new controller or emulator
+    /// switches into. Defaults to <c>false</c>; leave off for normal use, since it writes on
+    /// every button press/poll tick and the log file is never rotated or capped. Turn on
+    /// temporarily (via <c>TvLauncher__EnableGamepadDebugLogging=true</c> in Docker/env config,
+    /// or directly in appsettings.json) only while actively reproducing an input problem.
+    /// </summary>
+    public bool EnableGamepadDebugLogging { get; set; } = false;
 }
 
 /// <summary>
