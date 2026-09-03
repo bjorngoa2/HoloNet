@@ -28,6 +28,12 @@ namespace HoloNet.TvLauncher.Services;
 /// align with DirectInput's 0-based button array indices) — with opt-in debug logging (see
 /// <see cref="GamepadDebugLog"/>) so that assumption can actually be verified against live
 /// hardware instead of shipping unverified again.
+///
+/// When the OS's generic HID parser can't read a device's current report at all (observed with
+/// the DualSense's Bluetooth "extended" report, entered once anything communicates with the pad
+/// over SDL/hidapi, and never left until it's power-cycled), this falls back to a small registry
+/// of manually-parsed, exact vendor/product/report-ID/length-matched formats — see
+/// <see cref="KnownGamepadReportFormats"/>.
 /// </summary>
 internal sealed class RawInputGamepadReader : IDisposable
 {
@@ -44,14 +50,7 @@ internal sealed class RawInputGamepadReader : IDisposable
     private const int HidPInput = 0;
     private const int HidPStatusSuccess = 0x00110000;
     private const int MaxTrackedButtons = 32;
-
-    // DualSense Bluetooth "extended" input report — see class doc comment above the fallback
-    // parser below. Values confirmed against Linux's drivers/hid/hid-playstation.c.
-    private const byte DualSenseBtExtendedReportId = 0x31;
-    private const int DualSenseBtExtendedReportSize = 78;
-    private const int DualSenseBtButtons0Offset = 9;
-    private const int DualSenseBtButtons1Offset = 10;
-    private const int DualSenseBtButtons2Offset = 11;
+    private const uint RidiDeviceInfo = 0x2000000B;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RawInputDevice
@@ -76,6 +75,36 @@ internal sealed class RawInputGamepadReader : IDisposable
     {
         public uint SizeHid;
         public uint Count;
+    }
+
+    /// <summary>
+    /// The HID-specific arm of the <c>RID_DEVICE_INFO</c> union (Win32's <c>RID_DEVICE_INFO_HID</c>).
+    /// Only valid when queried for a device whose type is <see cref="RimTypeHid"/> — used solely
+    /// to identify vendor/product ID so a manually-parsed report format (see
+    /// <see cref="KnownGamepadReportFormats"/>) is never applied to a device it wasn't verified
+    /// against.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputDeviceInfoHid
+    {
+        public uint Size;
+        public uint Type;
+        public uint VendorId;
+        public uint ProductId;
+        public uint VersionNumber;
+        public ushort UsagePage;
+        public ushort Usage;
+
+        // RID_DEVICE_INFO's device-specific fields are a union with RID_DEVICE_INFO_MOUSE and
+        // RID_DEVICE_INFO_KEYBOARD, not just this HID variant. RID_DEVICE_INFO_KEYBOARD is the
+        // largest of the three (6 DWORDs vs. this struct's 3 DWORDs + 2 WORDs), and
+        // GetRawInputDeviceInfo validates the caller's buffer against that full union size
+        // regardless of which variant the device actually is — passing a buffer sized only for
+        // the HID fields fails with ERROR_INSUFFICIENT_BUFFER (122) even though those extra
+        // bytes are never populated for a HID device. This padding exists purely so the buffer
+        // size matches; its value is never read.
+        private readonly uint _unusedKeyboardUnionPadding1;
+        private readonly uint _unusedKeyboardUnionPadding2;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -110,6 +139,7 @@ internal sealed class RawInputGamepadReader : IDisposable
         uint reportLength);
 
     private readonly Dictionary<IntPtr, IntPtr> _preparsedDataByDevice = new();
+    private readonly Dictionary<IntPtr, (ushort VendorId, ushort ProductId)> _deviceIdsByDevice = new();
 
     private bool[] _lastLoggedButtons = [];
     private int _lastLoggedPov = int.MinValue;
@@ -220,32 +250,51 @@ internal sealed class RawInputGamepadReader : IDisposable
 
             // Confirmed via live testing: as soon as something (SDL/PCSX2) touches a Bluetooth
             // DualSense, it switches from its "basic" report (ID 1, which the generic HidP_*
-            // calls above parse fine) to its "extended" report (ID 0x31/49, 78 bytes) — and it
-            // stays there even after that app closes, until the pad is power-cycled. Windows'
-            // preparsed HID descriptor has no usage collection for report ID 0x31 at all, so
+            // calls above parse fine) to a manufacturer-private "extended" report — and it stays
+            // there even after that app closes, until the pad is power-cycled. Windows'
+            // preparsed HID descriptor has no usage collection for that report ID at all, so
             // HidP_GetUsages/GetUsageValue return HIDP_STATUS_INCOMPATIBLE_REPORT_ID (0xC011000A)
-            // for it — this is a structural gap, not a bug in the calls above. Parse that report
-            // manually instead, using the fixed byte layout Sony's own Linux driver
-            // (drivers/hid/hid-playstation.c, dualsense_parse_report) uses for it, so the pad
-            // keeps working without ever needing a manual power-cycle.
-            if (buttonStatus != HidPStatusSuccess && reportLength == DualSenseBtExtendedReportSize
-                && report[0] == DualSenseBtExtendedReportId)
+            // for it — this is a structural gap, not a bug in the calls above. Fall back to a
+            // manually-parsed, exact-match report format for this specific device (see
+            // KnownGamepadReportFormats) instead, so the pad keeps working without ever needing
+            // a manual power-cycle.
+            string? fallbackOutcome = null;
+            if (buttonStatus != HidPStatusSuccess)
             {
-                ParseDualSenseBluetoothExtendedReport(report, buttons, out pov);
+                var (vendorId, productId) = GetOrFetchDeviceIds(header.Device);
+                var format = KnownGamepadReportFormats.Find(vendorId, productId, report[0], reportLength);
+                if (format is null)
+                {
+                    // No known manual fallback for this device/report combination — nothing more
+                    // we can do; leave buttons/pov at their all-centered defaults.
+                    fallbackOutcome = $"no known fallback format for vendorId=0x{vendorId:X4} productId=0x{productId:X4}";
+                }
+                else if (!format.ValidateCrc32(report))
+                {
+                    // A corrupt/torn report must never be trusted — leaving buttons/pov centered
+                    // is far safer than acting on garbage input.
+                    fallbackOutcome = "fallback format matched but CRC-32 validation failed";
+                }
+                else
+                {
+                    pov = format.Parse(report, buttons);
+                    fallbackOutcome = "fallback format matched and parsed";
+                }
             }
 
             Buttons = buttons;
             Pov = pov;
             HasReceivedData = true;
 
-            // Diagnostic-only: log whenever the report's identity (ID/length) or whether we can
-            // successfully parse it changes at all, independent of whether the *parsed* button/
-            // pov values changed. This is deliberately NOT deduped against button/pov state,
-            // because a device that has switched HID report formats (e.g. a Bluetooth DualSense
-            // entering its "extended" mode) can keep sending WM_INPUT messages that consistently
-            // fail to parse (buttonStatus/povStatus != success) while the last successfully
-            // parsed Buttons/Pov stay frozen — LogIfChanged alone would go completely silent in
-            // that case even though data is still arriving, hiding the real failure mode.
+            // Diagnostic-only: log whenever the report's identity (ID/length), whether we can
+            // successfully parse it, or the fallback outcome changes at all, independent of
+            // whether the *parsed* button/pov values changed. This is deliberately NOT deduped
+            // against button/pov state, because a device that has switched HID report formats
+            // (e.g. a Bluetooth DualSense entering its "extended" mode) can keep sending
+            // WM_INPUT messages that consistently fail to parse (buttonStatus/povStatus !=
+            // success) while the last successfully parsed Buttons/Pov stay frozen — LogIfChanged
+            // alone would go completely silent in that case even though data is still arriving,
+            // hiding the real failure mode.
             var reportId = report.Length > 0 ? report[0] : (byte)0xFF;
             if (reportId != _lastReportId || reportLength != _lastReportLength
                 || buttonStatus != _lastButtonStatus || povStatus != _lastPovStatus)
@@ -254,7 +303,8 @@ internal sealed class RawInputGamepadReader : IDisposable
                 _lastReportLength = reportLength;
                 _lastButtonStatus = buttonStatus;
                 _lastPovStatus = povStatus;
-                GamepadDebugLog.Log($"report reportId={reportId} length={reportLength} buttonStatus=0x{buttonStatus:X} povStatus=0x{povStatus:X}");
+                var suffix = fallbackOutcome is null ? string.Empty : $" fallback=[{fallbackOutcome}]";
+                GamepadDebugLog.Log($"report reportId={reportId} length={reportLength} buttonStatus=0x{buttonStatus:X} povStatus=0x{povStatus:X}{suffix}");
             }
 
             LogIfChanged(buttons, pov);
@@ -263,46 +313,6 @@ internal sealed class RawInputGamepadReader : IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
-    }
-
-    /// <summary>
-    /// Manually parses a DualSense Bluetooth "extended" input report (ID 0x31, 78 bytes),
-    /// which Windows' generic HID parser cannot handle (see the call site above). Byte offsets
-    /// and bit masks below match <c>struct dualsense_input_report</c> and the
-    /// <c>DS_BUTTONS0_*</c>/<c>DS_BUTTONS1_*</c>/<c>DS_BUTTONS2_*</c> masks in Linux's
-    /// drivers/hid/hid-playstation.c: the report's first 2 bytes are the report ID and a
-    /// Bluetooth sequence/tag byte, after which the common DualSense report layout begins —
-    /// button bytes land at offsets 9-11 of the full report. Button indices are assigned to
-    /// match the same 0-based ordering the generic HID Usage path already produces (confirmed
-    /// live: Usage ID 2 → Cross/Confirm at index 1, Usage ID 3 → Circle/Cancel at index 2, etc.),
-    /// so this fallback plugs into <see cref="Configuration.TvLauncherOptions.DirectInputButtonMappings"/>
-    /// without any special-casing further up the stack.
-    /// </summary>
-    private static void ParseDualSenseBluetoothExtendedReport(byte[] report, bool[] buttons, out int pov)
-    {
-        var buttons0 = report[DualSenseBtButtons0Offset];
-        var buttons1 = report[DualSenseBtButtons1Offset];
-        var buttons2 = report[DualSenseBtButtons2Offset];
-
-        buttons[0] = (buttons0 & 0x10) != 0; // Square
-        buttons[1] = (buttons0 & 0x20) != 0; // Cross
-        buttons[2] = (buttons0 & 0x40) != 0; // Circle
-        buttons[3] = (buttons0 & 0x80) != 0; // Triangle
-        buttons[4] = (buttons1 & 0x01) != 0; // L1
-        buttons[5] = (buttons1 & 0x02) != 0; // R1
-        buttons[6] = (buttons1 & 0x04) != 0; // L2 (digital)
-        buttons[7] = (buttons1 & 0x08) != 0; // R2 (digital)
-        buttons[8] = (buttons1 & 0x10) != 0; // Create/Share
-        buttons[9] = (buttons1 & 0x20) != 0; // Options
-        buttons[10] = (buttons1 & 0x40) != 0; // L3
-        buttons[11] = (buttons1 & 0x80) != 0; // R3
-        buttons[12] = (buttons2 & 0x01) != 0; // PS/Home
-        buttons[13] = (buttons2 & 0x02) != 0; // Touchpad click
-
-        // Low nibble of buttons0 is the D-pad hat switch: 0-7 for the eight directions, 8 for
-        // centered — same convention as the generic HidP_GetUsageValue path this replaces.
-        var hat = buttons0 & 0x0F;
-        pov = hat <= 7 ? hat * 4500 : -1;
     }
 
     private void LogIfChanged(bool[] buttons, int pov)
@@ -339,11 +349,46 @@ internal sealed class RawInputGamepadReader : IDisposable
         return buffer;
     }
 
+    /// <summary>Fetches (and caches) a device's USB vendor/product ID, used to gate manually-parsed report formats to the exact hardware they were verified against (see <see cref="KnownGamepadReportFormats"/>).</summary>
+    private (ushort VendorId, ushort ProductId) GetOrFetchDeviceIds(IntPtr device)
+    {
+        if (_deviceIdsByDevice.TryGetValue(device, out var cached))
+            return cached;
+
+        var result = (VendorId: (ushort)0, ProductId: (ushort)0);
+        var size = (uint)Marshal.SizeOf<RawInputDeviceInfoHid>();
+        var buffer = Marshal.AllocHGlobal((int)size);
+        try
+        {
+            Marshal.WriteInt32(buffer, (int)size); // RID_DEVICE_INFO.cbSize must be pre-populated.
+
+            if (GetRawInputDeviceInfo(device, RidiDeviceInfo, buffer, ref size) != unchecked((uint)-1))
+            {
+                var info = Marshal.PtrToStructure<RawInputDeviceInfoHid>(buffer);
+                if (info.Type == RimTypeHid)
+                    result = ((ushort)info.VendorId, (ushort)info.ProductId);
+            }
+            else
+            {
+                GamepadDebugLog.Log($"GetRawInputDeviceInfo(RIDI_DEVICEINFO) failed for device=0x{device:X} lastError={Marshal.GetLastWin32Error()}");
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+
+        _deviceIdsByDevice[device] = result;
+        GamepadDebugLog.Log($"Device 0x{device:X} vendorId=0x{result.VendorId:X4} productId=0x{result.ProductId:X4}");
+        return result;
+    }
+
     public void Dispose()
     {
         foreach (var preparsedData in _preparsedDataByDevice.Values)
             Marshal.FreeHGlobal(preparsedData);
 
         _preparsedDataByDevice.Clear();
+        _deviceIdsByDevice.Clear();
     }
 }
