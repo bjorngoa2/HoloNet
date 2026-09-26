@@ -536,7 +536,7 @@ public partial class MainWindow : Window
 
         var extensionPath = Path.Combine(AppContext.BaseDirectory, "Vendor", "uBlockOrigin");
         var installed = await EmbeddedBrowser.CoreWebView2.Profile.GetBrowserExtensionsAsync();
-        if (installed.Count == 0 && Directory.Exists(_options.UBlockExtensionPath))
+        if (installed.Count == 0 && Directory.Exists(extensionPath))
             await EmbeddedBrowser.CoreWebView2.Profile.AddBrowserExtensionAsync(extensionPath);
 
         EmbeddedBrowser.Visibility = Visibility.Visible;
