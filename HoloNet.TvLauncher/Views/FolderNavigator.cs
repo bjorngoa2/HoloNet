@@ -73,7 +73,8 @@ public sealed class FolderNavigator(TvLauncherOptions options)
 
         Cards.Clear();
         Cards.Add(gamesFolder);
-        Cards.AddRange(options.Shortcuts.Select(s => (IPickerCard)new ShortcutCardViewModel(s)));
+        Cards.AddRange(options.Shortcuts.Select(IPickerCard (s) => new ShortcutCardViewModel(s)));
+        Cards.AddRange(options.WebApps.Select(IPickerCard (w) => new WebAppCardViewModel(w.Title, w.Url)));
     }
 
     public void EnterFolder(FolderCardViewModel folder, int selectedIndex)

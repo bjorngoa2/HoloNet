@@ -156,6 +156,15 @@ public class TvLauncherOptions
     /// or directly in appsettings.json) only while actively reproducing an input problem.
     /// </summary>
     public bool EnableGamepadDebugLogging { get; set; } = false;
+
+    public List<WebAppEntry> WebApps { get; set; } = new();
+    public string UBlockExtensionPath { get; set; } = string.Empty;
+
+    public sealed class WebAppEntry
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+    }
 }
 
 /// <summary>

@@ -15,4 +15,6 @@ public interface IPickerCardVisitor<out TResult>
     TResult VisitShortcut(ShortcutCardViewModel shortcut);
 
     TResult VisitGame(GameCardViewModel game);
+
+    TResult VisitWebApp(WebAppCardViewModel webApp);
 }

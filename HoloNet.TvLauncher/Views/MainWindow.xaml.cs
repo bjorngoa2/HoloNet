@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -7,6 +8,7 @@ using HoloNet.TvLauncher.Configuration;
 using HoloNet.TvLauncher.Models;
 using HoloNet.TvLauncher.Services;
 using Microsoft.Extensions.Options;
+using Microsoft.Web.WebView2.Core;
 
 namespace HoloNet.TvLauncher.Views;
 
@@ -48,6 +50,10 @@ public partial class MainWindow : Window
         public Task VisitShortcut(ShortcutCardViewModel shortcut) => window.LaunchShortcutAsync(shortcut);
 
         public Task VisitGame(GameCardViewModel game) => window.LaunchGameAsync(game);
+        public async Task VisitWebApp(WebAppCardViewModel webApp)
+        {
+            await window.OpenWebAppAsync(webApp);
+        }
     }
 
     private readonly SelectionVisitor _selectionVisitor;
@@ -507,6 +513,36 @@ public partial class MainWindow : Window
             _isBusy = false;
             _screensaver.NotifyActivity();
         }
+    }
+    
+    private CoreWebView2Environment? _webViewEnvironment;
+
+    private async Task OpenWebAppAsync(WebAppCardViewModel webApp)
+    {
+        if (_webViewEnvironment is null)
+        {
+            var envOptions = new CoreWebView2EnvironmentOptions
+            {
+                AreBrowserExtensionsEnabled = true
+            };
+            
+            var userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HoloNet.TvLauncher", "WebView2");
+
+            _webViewEnvironment =
+                await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: envOptions);
+        }
+
+        await EmbeddedBrowser.EnsureCoreWebView2Async(_webViewEnvironment);
+
+        var extensionPath = Path.Combine(AppContext.BaseDirectory, "Vendor", "uBlockOrigin");
+        var installed = await EmbeddedBrowser.CoreWebView2.Profile.GetBrowserExtensionsAsync();
+        if (installed.Count == 0 && Directory.Exists(_options.UBlockExtensionPath))
+            await EmbeddedBrowser.CoreWebView2.Profile.AddBrowserExtensionAsync(extensionPath);
+
+        EmbeddedBrowser.Visibility = Visibility.Visible;
+        EmbeddedBrowser.CoreWebView2.Navigate(webApp.Url);
+
+        _isBusy = true;
     }
 
     private TaskCompletionSource? _dismissWait;
