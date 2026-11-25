@@ -69,7 +69,9 @@ The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps a
   To pin another place, set `WeatherLatitude`/`WeatherLongitude` (and optionally `WeatherLocationName`); with neither available, the weather is hidden.
 - **Updates.** An installed launcher looks for a new release on GitHub at startup, every `UpdateCheckIntervalHours` (4 by default) and when the screensaver comes on, and downloads it in the background (`AppUpdateTracker`).
   The top bar then says the update is ready and Menu turns into "Install update"; choosing *Later* puts that version off until a newer one comes out.
-  Settings → *Check for updates* checks straight away and offers the update at once, or says the launcher is up to date; it works even with `AutoUpdateEnabled` off.
+  Settings → *Check for updates* checks straight away, showing the download's progress, and offers the update at once, or says the launcher is up to date; it works even with `AutoUpdateEnabled` off.
+  Installing stays in the launcher: it shows an install screen, hands over to Velopack, which swaps the files silently (a running program can't replace itself), and the new version comes back with "Updated to v…".
+  Updates are only installed from that prompt; Velopack's install-on-next-launch, behind its own Windows dialog, is turned off.
 
 ## Playback controls
 

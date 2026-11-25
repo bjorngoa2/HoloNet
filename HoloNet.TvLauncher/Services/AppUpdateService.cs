@@ -68,17 +68,29 @@ public interface IAppUpdateService
     string CurrentVersion { get; }
 
     /// <summary>
+    /// Whether this run started right after installing an update (see <see cref="ApplyUpdateAndRestart"/>),
+    /// so the launcher can confirm it finished.
+    /// </summary>
+    bool RestartedAfterUpdate { get; }
+
+    /// <summary>
     /// Checks GitHub Releases for a newer version and, if one exists, downloads it. Never throws:
     /// a failed check is reported as <see cref="AppUpdateCheckOutcome.Failed"/>. Whether to check
     /// at all (see <see cref="TvLauncherOptions.AutoUpdateEnabled"/>) is up to the caller (see
     /// <see cref="AppUpdateTracker"/>).
     /// </summary>
-    Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default);
+    /// <param name="downloadProgress">
+    /// Called with the download's progress, 0–100, possibly from a background thread. Not called
+    /// when there's nothing to download.
+    /// </param>
+    Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(Action<int>? downloadProgress = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Applies an already-downloaded update and restarts the app as the new version. This exits
     /// the current process — Velopack's <c>Update.exe</c> performs the actual file swap once
-    /// this process has ended (a running .exe can't overwrite itself), then relaunches.
+    /// this process has ended (a running .exe can't overwrite itself), then relaunches. It does
+    /// so silently, without Velopack's own progress window, so the launcher's install screen is
+    /// the last thing on screen before the new version starts.
     /// </summary>
     void ApplyUpdateAndRestart(AppUpdateInfo updateInfo);
 }
@@ -89,10 +101,11 @@ public sealed class AppUpdateService : IAppUpdateService
     private readonly ILogger<AppUpdateService> _logger;
     private readonly Lazy<UpdateManager?> _updateManager;
 
-    public AppUpdateService(IOptions<TvLauncherOptions> options, ILogger<AppUpdateService> logger)
+    public AppUpdateService(IOptions<TvLauncherOptions> options, AppStartup startup, ILogger<AppUpdateService> logger)
     {
         _options = options.Value;
         _logger = logger;
+        RestartedAfterUpdate = startup.RestartedAfterUpdate;
         _updateManager = new Lazy<UpdateManager?>(() =>
         {
             try
@@ -129,7 +142,9 @@ public sealed class AppUpdateService : IAppUpdateService
         }
     }
 
-    public async Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default)
+    public bool RestartedAfterUpdate { get; }
+
+    public async Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(Action<int>? downloadProgress = null, CancellationToken cancellationToken = default)
     {
         var updateManager = _updateManager.Value;
         if (updateManager is null || !updateManager.IsInstalled)
@@ -143,7 +158,7 @@ public sealed class AppUpdateService : IAppUpdateService
 
             // Velopack skips the download when this version's package is already on disk, so
             // finding the same pending update again on a later check costs only the lookup.
-            await updateManager.DownloadUpdatesAsync(updateInfo, cancelToken: cancellationToken);
+            await updateManager.DownloadUpdatesAsync(updateInfo, downloadProgress, cancellationToken);
 
             return AppUpdateCheckResult.Ready(new AppUpdateInfo(
                 updateManager.CurrentVersion?.ToString() ?? "unknown",
@@ -166,6 +181,9 @@ public sealed class AppUpdateService : IAppUpdateService
         var updateManager = _updateManager.Value
             ?? throw new InvalidOperationException("Velopack update manager is unavailable in this process.");
 
-        updateManager.ApplyUpdatesAndRestart(updateInfo.VelopackUpdateInfo.TargetFullRelease);
+        // ApplyUpdatesAndRestart, minus Velopack's progress window. The launcher bundles its own
+        // runtime, so there are no prerequisites that the silent install would need to ask about.
+        updateManager.WaitExitThenApplyUpdates(updateInfo.VelopackUpdateInfo.TargetFullRelease, silent: true, restart: true);
+        Environment.Exit(0);
     }
 }

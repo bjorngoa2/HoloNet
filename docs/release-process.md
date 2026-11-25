@@ -55,7 +55,9 @@ installer/updater attached to the GitHub Release.
     newer version silently, and shows an "Update ready" notice in its top bar — press Menu to
     review and confirm, or ignore it and keep playing (see
     `HoloNet.TvLauncher/Services/AppUpdateTracker.cs`). To get a release onto the TV straight
-    away, use Settings → Check for updates.
+    away, use Settings → Check for updates. Installing shows the launcher's own install screen;
+    the launcher closes for a few seconds while Velopack swaps the files, then comes back as the
+    new version.
   - Rolling back TvLauncher: run an older release's `-Setup.exe` again, or use
     `vpk download github` + `vpk pack`/republish locally if you need to force a downgrade.
 
