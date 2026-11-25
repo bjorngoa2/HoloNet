@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  # Releasing without pushing a tag, e.g. from the Actions tab or a session whose git access
+  # can't push tags: run it on main (or a release/* branch) with the version, and the release
+  # step creates the v<version> tag on that commit once everything has built.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.4.0 (tagged v1.4.0 on the chosen branch)'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -12,7 +21,46 @@ env:
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
+  # The tag and version every other job uses: the pushed tag, or the one a manual run asked for.
+  resolve-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve tag and version
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            version="${INPUT_VERSION#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::'$INPUT_VERSION' is not a version like 1.4.0."
+              exit 1
+            fi
+            if [[ "$GITHUB_REF" != "refs/heads/main" && "$GITHUB_REF" != refs/heads/release/* ]]; then
+              echo "::error::Run the release on main or a release/* branch, not '$GITHUB_REF_NAME'."
+              exit 1
+            fi
+            tag="v$version"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+              echo "::error::$tag already exists. Pick a new version."
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
   publish-images:
+    needs: resolve-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -50,12 +98,14 @@ jobs:
           file: ${{ steps.image.outputs.project }}/Dockerfile
           push: true
           tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ${{ steps.image.outputs.name }}:${{ needs.resolve-version.outputs.tag }}
             ${{ steps.image.outputs.name }}:latest
 
   publish-tvlauncher:
+    needs: resolve-version
     runs-on: windows-latest
     env:
+      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
       VELOPACK_ID: HoloNetTvLauncher
       PUBLISH_DIR: ${{ github.workspace }}/publish/TvLauncher
       VELOPACK_OUTPUT_DIR: ${{ github.workspace }}/artifacts/velopack
@@ -68,18 +118,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Resolve release version
-        id: version
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
       - name: Publish TvLauncher (self-contained, win-x64)
         run: >
           dotnet publish HoloNet.TvLauncher/HoloNet.TvLauncher.csproj
           -c Release -r win-x64 --self-contained true
-          -p:Version=${{ steps.version.outputs.version }}
+          -p:Version=${{ env.RELEASE_VERSION }}
           -p:PublishSingleFile=false
           -o ${{ env.PUBLISH_DIR }}
 
@@ -90,7 +133,7 @@ jobs:
         run: >
           dotnet publish HoloNet.PrimePlayer/HoloNet.PrimePlayer.csproj
           -c Release -r win-x64 --self-contained true
-          -p:Version=${{ steps.version.outputs.version }}
+          -p:Version=${{ env.RELEASE_VERSION }}
           -p:PublishSingleFile=false
           -o ${{ env.PUBLISH_DIR }}
 
@@ -112,7 +155,7 @@ jobs:
         run: |
           vpk pack `
             --packId "${{ env.VELOPACK_ID }}" `
-            --packVersion "${{ steps.version.outputs.version }}" `
+            --packVersion "${{ env.RELEASE_VERSION }}" `
             --packDir "${{ env.PUBLISH_DIR }}" `
             --mainExe "HoloNet.TvLauncher.exe" `
             --outputDir "${{ env.VELOPACK_OUTPUT_DIR }}" `
@@ -127,7 +170,7 @@ jobs:
           if-no-files-found: error
 
   create-release:
-    needs: [publish-images, publish-tvlauncher]
+    needs: [resolve-version, publish-images, publish-tvlauncher]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -140,6 +183,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # On a manual run the tag doesn't exist yet, so this creates it on the commit that was
+          # built; on a tag push it's that tag and target_commitish is ignored.
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           # Every file Velopack produces must be uploaded together — the full/delta .nupkg's,
           # the Setup.exe installer, and releases.win.json (the update feed UpdateManager reads
