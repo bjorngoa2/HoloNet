@@ -83,6 +83,17 @@ jobs:
           -p:PublishSingleFile=false
           -o ${{ env.PUBLISH_DIR }}
 
+      # Bundled next to the launcher so appsettings.json's relative "PrimePlayerToolPath" finds it
+      # (Prime Video, Disney+ and HBO Max auto-play). Same runtime as the launcher, so the shared
+      # self-contained runtime files it writes are identical.
+      - name: Publish PrimePlayer into the launcher folder
+        run: >
+          dotnet publish HoloNet.PrimePlayer/HoloNet.PrimePlayer.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:PublishSingleFile=false
+          -o ${{ env.PUBLISH_DIR }}
+
       - name: Install vpk
         run: dotnet tool install -g vpk --version ${{ env.VPK_VERSION }}
 

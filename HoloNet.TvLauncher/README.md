@@ -27,7 +27,7 @@ you quit back to the picker mid-game with a controller hold-combo.
    up first.
 4. The picker waits for the emulator process to exit, then re-shows the grid.
 5. **Start**/Options (or F5) refreshes the library from the API. **B**/Circle/Escape
-   currently only dismisses error overlays.
+   goes back out of a folder (or dismisses an error).
 6. **While a game is running**, holding **Back+Start** (Xbox) / **Share+Options**
    (DualShock/DualSense) together for `QuitHoldMilliseconds` (default 1.5s) closes the
    emulator and returns to the picker — handy for switching games without touching a
@@ -37,14 +37,78 @@ you quit back to the picker mid-game with a controller hold-combo.
    (see below), it's killed immediately instead. For testing without a controller, the
    **Q** key does the same immediately (no hold required).
 7. If a game has a `SaveStats` entry configured (keyed by title), the picker reads its PS2
-   memory card save file directly and shows a small "Bolts / Playtime" info panel in the
-   bottom-right corner whenever that game is the currently-selected card (see
-   **Save-file stats** below).
+   memory card save file directly and shows a "Bolts / Playtime" line in the hero area
+   whenever that game is focused (see **Save-file stats** below).
+
+## Home screen design
+
+The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps and games feel like native apps.
+
+- **Canvas and safe area.** Everything is laid out on a 1920×1080 canvas inside a `Viewbox`, with a 5% safe-area margin, so it scales crisply to any TV resolution and never runs under a TV's overscan.
+- **Hero instead of captions.** Artwork tiles carry no captions; the focused tile's title, metadata, synopsis and save stats are shown large above the row (`HeroDetails`), with its artwork faded in behind them (`HeroBackdrop`).
+  The one exception is tiles that share their art, such as a show's seasons, which caption it over a bottom scrim (`CardArt.CaptionsArt`) so they can be told apart.
+  The backdrop also darkens under the header, so the header stays legible over bright art.
+- **Focus.** The focused tile scales up with a white focus ring and shadow, and the others dim; motion uses shared durations and easing (`Motion` in code, `FocusDuration`/`StandardEase` in `App.xaml`).
+- **Spatial navigation.** The D-pad moves to the nearest tile on screen in that direction (`SpatialNavigator`), and the focused row scrolls smoothly to the top.
+- **Artwork.** Tile art loads in the background and fades in (`ArtImage`); until it has loaded, the tile shows its brand colour, icon and title. Prime Video artwork is requested at display size from Amazon's image CDN (`PrimeVideoArtwork`) rather than as multi-megabyte originals, and Disney+ and HBO Max artwork likewise from their image services (`DisneyPlusArtwork`, `HboMaxArtwork`).
+- **Launch splash.** Opening anything shows the tile's art large and centred in its brand colour (`SplashOverlay`), and the splash stays up behind the game or app for the whole session. Errors and the update prompt use the same overlay, so every modal state shares one look.
+- **Button prompts.** The hint bar shows real controller glyphs for the connected pad (Xbox or PlayStation) and only lists actions that apply to the focused tile (`HomeHints`).
+- **Settings.** The last Home tile opens Settings (`SettingsMenu`), where each setting is a folder whose subtitle shows its current value.
+  Choosing an option saves it at once to `%LOCALAPPDATA%\HoloNet\TvLauncher\settings.json` (`LauncherSettingsStore`), and the option in use shows a check mark.
+- **Rearranging Home.** Press **X**/Square (or Delete) on a Home tile to pick it up; arrows appear around it.
+  The D-pad moves it to the neighbouring spot, Confirm puts it down and saves the order to `settings.json`, and Cancel puts everything back.
+  Settings stays last and can't be moved.
+  Tiles are matched by key (`games`, `streaming:<provider>`, `shortcut:<title>`), so a newly added tile appears after the arranged ones (`HomeOrder`).
+- **Screensaver.** After `ScreensaverIdleMinutes` without input, the launcher shows the screensaver chosen under Settings → Screensaver (`ScreensaverController`).
+  Each style is an `IScreensaverScene`: *Ambient clock* (the default) shows a large dimmed clock, the date and the weather, and moves to a new spot every minute; *Bouncing logo* drifts a dim HoloNet logo around the screen.
+  Choosing a style shows a preview, and any button dismisses it.
+  The weather comes from [Open-Meteo](https://open-meteo.com/), which needs no API key, for this PC's own location from the Windows location service (`HomeLocationService`).
+  The location is rounded to about a kilometre before it leaves the PC, and the place name is looked up with BigDataCloud's free reverse geocoding.
+  To pin another place, set `WeatherLatitude`/`WeatherLongitude` (and optionally `WeatherLocationName`); with neither available, the weather is hidden.
+
+## Playback controls
+
+While a Prime Video, Disney+ or HBO Max title plays, the launcher draws its own TV-style playback controls over the fullscreen browser (`PlaybackOverlayController`, `PlaybackOverlayWindow`).
+They are a transparent, click-through, always-on-top WPF window rather than a browser extension, so they look and behave the same as the rest of the launcher.
+Playback state and commands go through Windows' system media sessions (`MediaSessionService`, the same feed as the volume flyout), so the controls work for any site the browser plays.
+Some sites (Disney+) publish only whether they're playing, with no timeline.
+For those the controls hide the timeline, and skipping presses the player's own arrow-key shortcuts in the browser instead (`PlayerKeys`).
+
+| Button | Action |
+|---|---|
+| Any button | Show the controls |
+| A / ✕ | Play or pause |
+| D-pad left/right | Skip 10 seconds per press; presses add up and are applied 0.7 s after the last one (without a timeline, each press skips straight away) |
+| B / ○ | Cancel a pending skip, otherwise hide the controls |
+| Hold Back+Start / Share+Options | Pause and return home |
+
+The controls fade away 4 seconds after the last press while playing, and stay up while paused.
+Returning home leaves the browser paused behind the launcher, so choosing the title again resumes the same tab.
+Closing the browser also returns home.
+
+Known limitations:
+
+- The site's own subtitles render underneath the controls' scrim while they are shown.
+- If the site autoplays the next episode, the controls keep showing the previous episode's title.
+
+## Streaming folders (Prime Video, Disney+ and HBO Max)
+
+`PrimeVideoEnabled`, `DisneyPlusEnabled` and `HboMaxEnabled` show the "Prime Video", "Disney+" and "HBO Max" folders on the home screen.
+Which titles they list is kept in `HoloNet.Video`'s library (`VideoLibraryApiBaseUrl`), and each title's seasons, episodes and progress come from its catalog (`VideoCatalogApiBaseUrl`).
+The library is managed from the launcher itself:
+
+- **Add.** Each folder ends with an "Add a title" tile.
+  It asks for a link to a show or film, copied from the Prime Video, Disney+ or HBO Max website, and fills it in from the clipboard when it holds one.
+  The service is worked out from the link, so a Disney+ link added from the Prime Video folder lands in the Disney+ folder.
+  New titles are listed first.
+- **Remove.** Press **X**/Square (or Delete) on a title in a service's folder, then confirm.
+
+Episodes and films from every service play in your real, signed-in Firefox through `HoloNet.PrimePlayer` (see its README), so they use the profile you're signed in with there.
 
 ## Save-file stats (PS2 memory card reading)
 
 For games with a `SaveStats` entry configured, the picker reads a handful of bytes directly
-out of the emulator's memory card save file and shows them as an info panel (currency +
+out of the emulator's memory card save file and shows them in the hero area (currency +
 playtime) for whichever game is currently selected — this is deliberately shown as an
 always-visible panel tied to gamepad selection, not a mouse-hover tooltip, since this app
 has no mouse-driven navigation.
@@ -103,7 +167,8 @@ Ratchet & Clank example).
     "Confirm": 1,
     "Cancel": 2,
     "Refresh": 9,
-    "Share": 8
+    "Share": 8,
+    "Secondary": 3
   },
   "EmulatorMappings": {
     "PS2": {
@@ -135,6 +200,27 @@ that emulator:
   dialog itself isn't hidden, just its parent window.
 - `true` — kills the process immediately, no graceful close attempt at all. Useful if you'd
   rather skip that confirmation dialog entirely and always quit instantly.
+
+### Shortcut tiles and kiosk web apps
+
+`Shortcuts` adds non-game tiles that open a URL.
+By default the URL opens in the system default browser.
+With `"Kiosk": true`, it opens as a fullscreen app in Firefox kiosk mode with uBlock Origin, and the quit combo returns to the picker.
+See [`Firefox/README.md`](Firefox/README.md) for the one-time setup, plus the optional `FirefoxPath` and `KioskFirefoxProfilePath` settings.
+
+Each shortcut can also set how its tile looks:
+
+```jsonc
+{
+  "Title": "YouTube", "Url": "https://www.youtube.com", "Kiosk": true,
+  "Icon": "Play", "AccentColor": "#FF0033",
+  "Description": "YouTube in fullscreen, with uBlock Origin blocking the ads."
+}
+```
+
+- `Icon` is one of `Game`, `Video`, `Tv`, `Photo`, `Play`, `Folder`, `Key`, `Globe` or `Music` (see `TileIcons`); without one, the tile shows the title's initials.
+- `AccentColor` is the tile's brand colour as `#RRGGBB`, also used for the backdrop glow and the launch splash.
+- `Description` is the synopsis shown in the hero area when the tile is focused.
 
 ## PS4/PS5 controller over Bluetooth + PCSX2
 

@@ -1,16 +1,12 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using HoloNet.TvLauncher.Models;
 
 namespace HoloNet.TvLauncher.Views;
 
 /// <summary>
-/// Presentation wrapper around <see cref="GameDto"/> for binding in the picker grid.
+/// Presentation wrapper around <see cref="GameDto"/> for binding in the picker.
 /// </summary>
-public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : IPickerCard
+public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : PickerCardBase
 {
-    private bool _isSelected;
-
     private SaveStats? _saveStats = saveStats;
 
     public GameDto Game { get; } = game;
@@ -22,106 +18,75 @@ public class GameCardViewModel(GameDto game, SaveStats? saveStats = null) : IPic
         {
             _saveStats = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(SaveStatsText));
-            OnPropertyChanged(nameof(HasSaveStats));
+            OnPropertyChanged(nameof(Details));
         }
     }
 
-    public string Title => Game.Title;
+    public override string Title => Game.Title;
 
     public string Platform => Game.Platform;
 
-    public string YearText => Game.Year?.ToString() ?? string.Empty;
+    public override string Subtitle => string.Join(" · ", new[]
+    {
+        Platform,
+        Game.Year?.ToString(),
+        Game.Genre is { Length: > 0 } genres ? string.Join(", ", genres.Take(2)) : null
+    }.Where(part => !string.IsNullOrWhiteSpace(part)));
 
-    public string Subtitle => string.IsNullOrEmpty(YearText) ? Platform : $"{Platform} · {YearText}";
+    public override string? Description => Game.Description;
 
-    public string InitialsGlyph => string.Concat(Game.Title
-        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-        .Take(2)
-        .Select(word => char.ToUpperInvariant(word[0])));
+    public override string? ThumbnailUrl => Game.ThumbnailUrl;
 
-    public string? ThumbnailUrl => Game.ThumbnailUrl;
+    public override string IconGlyph => TileIcons.Game;
 
-    public bool HasThumbnail => !string.IsNullOrWhiteSpace(Game.ThumbnailUrl);
+    public override CardShape Shape => CardShape.Poster;
 
-    public bool ShowInitials => !HasThumbnail;
+    public override string ActionLabel => "Play";
 
-    public bool IsFolder => false;
-
-    private string? _showcaseScreenshotPath;
+    private string? _previewImagePath;
 
     /// <summary>
-    /// Absolute path to the most recent "where I currently am in this game" screenshot captured
-    /// when the player last quit this game (see <see cref="Services.GameScreenshotService"/>),
-    /// or <c>null</c> if none has been captured yet. Shown as a preview overlay when this card is
-    /// selected, in place of the static cover-art thumbnail.
+    /// The most recent "where I currently am in this game" screenshot captured while the game was
+    /// last played (see <see cref="Services.GameScreenshotService"/>), or <c>null</c> if none has
+    /// been captured yet.
     /// </summary>
-    public string? ShowcaseScreenshotPath
-    {
-        get => _showcaseScreenshotPath;
-        private set
-        {
-            _showcaseScreenshotPath = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasShowcaseScreenshot));
-        }
-    }
-
-    public bool HasShowcaseScreenshot => !string.IsNullOrWhiteSpace(ShowcaseScreenshotPath);
+    public override string? PreviewImagePath => _previewImagePath;
 
     /// <summary>
     /// Re-reads whether a showcase screenshot exists on disk for this game, e.g. after quitting
     /// it (a fresh capture may now exist) or on initial library load (a capture from a previous
     /// session may already exist).
     /// </summary>
-    public void RefreshScreenshot(Services.IGameScreenshotService screenshotService) =>
-        ShowcaseScreenshotPath = screenshotService.GetScreenshotPath(Game.Title);
+    public void RefreshScreenshot(Services.IGameScreenshotService screenshotService)
+    {
+        _previewImagePath = screenshotService.GetScreenshotPath(Game.Title);
+        OnPropertyChanged(nameof(PreviewImagePath));
+    }
 
     /// <summary>
-    /// Multi-line hover-info text shown as the card's tooltip, e.g. "Bolts: 867" and
-    /// "Playtime: 00:18:28". Empty when no save stats are configured/available for this game,
-    /// which suppresses the tooltip entirely (see the XAML's <c>ToolTipService.IsEnabled</c> binding).
+    /// One-line save info for the hero panel, e.g. "Bolts: 867 · Playtime: 00:18:28", or
+    /// <c>null</c> when no save stats are configured/available.
     /// </summary>
-    public string SaveStatsText
+    public override string? Details
     {
         get
         {
             if (SaveStats is null)
-                return string.Empty;
+                return null;
 
-            var lines = new List<string>();
+            var parts = new List<string>();
             if (SaveStats.Currency is { } currency)
-                lines.Add($"{SaveStats.CurrencyLabel}: {currency:N0}");
+                parts.Add($"{SaveStats.CurrencyLabel}: {currency:N0}");
             if (SaveStats.Playtime is { } playtime)
-                lines.Add($"Playtime: {(int)playtime.TotalHours:D2}:{playtime.Minutes:D2}:{playtime.Seconds:D2}");
+                parts.Add($"Playtime: {(int)playtime.TotalHours:D2}:{playtime.Minutes:D2}:{playtime.Seconds:D2}");
             if (SaveStats.Location is { } location)
-                lines.Add($"Location: {location}");
+                parts.Add($"Location: {location}");
             if (SaveStats.LastPlayed is { } lastPlayed)
-                lines.Add($"Last played: {lastPlayed.ToLocalTime():g}");
+                parts.Add($"Last played: {lastPlayed.ToLocalTime():g}");
 
-            return string.Join(Environment.NewLine, lines);
+            return parts.Count > 0 ? string.Join(" · ", parts) : null;
         }
     }
 
-    public bool HasSaveStats => SaveStatsText.Length > 0;
-
-    public TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitGame(this);
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected == value)
-                return;
-
-            _isSelected = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    public override TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitGame(this);
 }

@@ -1,0 +1,29 @@
+<UserControl x:Class="HoloNet.TvLauncher.Views.AmbientClockScene"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False">
+    <!--
+        A large, dimmed clock with the date and the weather on black. Drawn on the same
+        1920x1080 canvas as the home screen, so it keeps its proportions on any TV. The whole
+        block fades to a new spot every minute (see AmbientClockScene), so nothing stays lit
+        in one place long enough to burn in on an OLED panel.
+    -->
+    <Viewbox Stretch="Uniform">
+        <Canvas x:Name="Stage" Width="1920" Height="1080">
+            <StackPanel x:Name="Block" Opacity="0">
+                <TextBlock x:Name="TimeText" FontFamily="{StaticResource UiFont}" FontSize="200" FontWeight="Light"
+                           Foreground="#B3FFFFFF" />
+                <TextBlock x:Name="DateText" FontFamily="{StaticResource UiFont}" FontSize="44"
+                           Foreground="#80FFFFFF" Margin="10,-18,0,0" />
+                <StackPanel x:Name="WeatherPanel" Orientation="Horizontal" Margin="10,22,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="WeatherGlyphText" FontFamily="Segoe UI Symbol" FontSize="40"
+                               Foreground="#80FFFFFF" VerticalAlignment="Center" />
+                    <TextBlock x:Name="TemperatureText" FontFamily="{StaticResource UiFont}" FontSize="40"
+                               Foreground="#80FFFFFF" VerticalAlignment="Center" Margin="16,0,0,0" />
+                    <TextBlock x:Name="LocationText" FontFamily="{StaticResource UiFont}" FontSize="40"
+                               Foreground="#4DFFFFFF" VerticalAlignment="Center" Margin="20,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Canvas>
+    </Viewbox>
+</UserControl>

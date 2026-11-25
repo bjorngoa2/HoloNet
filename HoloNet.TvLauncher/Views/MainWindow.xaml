@@ -1,6 +1,7 @@
 <Window x:Class="HoloNet.TvLauncher.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:HoloNet.TvLauncher.Views"
         Title="HoloNet TV Launcher"
         WindowStyle="None"
         WindowState="Maximized"
@@ -9,128 +10,183 @@
         KeyDown="Window_KeyDown">
 
     <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-
-        <Style x:Key="CardStyle" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Setter Property="BorderThickness" Value="3" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Margin" Value="12" />
-            <Setter Property="Width" Value="220" />
-            <Setter Property="Height" Value="260" />
-            <Style.Triggers>
-                <!-- Folder tiles ("Games", platform folders) are already distinguished from
-                     game/shortcut tiles by their 📁 glyph (see FolderCardViewModel.InitialsGlyph),
-                     so they don't need a separate always-on border treatment too. -->
-                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter Property="BorderBrush" Value="{StaticResource CardSelectedBrush}" />
-                    <Setter Property="Background" Value="#26263A" />
-                </DataTrigger>
-            </Style.Triggers>
+        <!-- The arrows around a tile the player has picked up to move (see FolderNavigator.BeginMove). -->
+        <Style x:Key="MoveArrowChip" TargetType="Border">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Background" Value="#F00B0B10" />
+            <Setter Property="BorderBrush" Value="White" />
+            <Setter Property="BorderThickness" Value="2" />
         </Style>
+        <Style x:Key="MoveArrowGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!--
+            A picker tile. There's no caption under it: the hero panel shows the focused tile's
+            details. Focus is shown the way TV platforms do it: the tile scales up, gets a
+            white ring and a lifted shadow, while the other tiles dim slightly. These cues read
+            from across a room, where a thin border colour change does not.
+        -->
+        <DataTemplate x:Key="TileTemplate" DataType="{x:Type local:IPickerCard}">
+            <Grid x:Name="Tile" Width="320" Height="180" Margin="0,0,32,32" Opacity="0.7" RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform />
+                </Grid.RenderTransform>
+
+                <Border x:Name="Shadow" CornerRadius="{StaticResource TileCornerRadius}" Background="Black" Opacity="0">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="40" ShadowDepth="14" Direction="270" Opacity="0.75" />
+                    </Border.Effect>
+                </Border>
+                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource TileArtTemplate}" />
+                <Border x:Name="FocusRing" Margin="-7" CornerRadius="17" BorderThickness="4" BorderBrush="White" Opacity="0" />
+                <Grid x:Name="MoveArrows" Margin="-23" Visibility="Collapsed">
+                    <Border Style="{StaticResource MoveArrowChip}" HorizontalAlignment="Left" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource MoveArrowGlyph}" Text="&#xE76B;" />
+                    </Border>
+                    <Border Style="{StaticResource MoveArrowChip}" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource MoveArrowGlyph}" Text="&#xE76C;" />
+                    </Border>
+                    <Border Style="{StaticResource MoveArrowChip}" HorizontalAlignment="Center" VerticalAlignment="Top">
+                        <TextBlock Style="{StaticResource MoveArrowGlyph}" Text="&#xE70E;" />
+                    </Border>
+                    <Border Style="{StaticResource MoveArrowChip}" HorizontalAlignment="Center" VerticalAlignment="Bottom">
+                        <TextBlock Style="{StaticResource MoveArrowGlyph}" Text="&#xE70D;" />
+                    </Border>
+                </Grid>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsMoving}" Value="True">
+                    <Setter TargetName="MoveArrows" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Shape}" Value="Poster">
+                    <Setter TargetName="Tile" Property="Width" Value="210" />
+                    <Setter TargetName="Tile" Property="Height" Value="280" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 To="1.08" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                 To="1.08" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="FocusRing" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Shadow" Storyboard.TargetProperty="Opacity"
+                                                 To="1" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 To="1" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                 To="1" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Tile" Storyboard.TargetProperty="Opacity"
+                                                 To="0.7" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="FocusRing" Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                                <DoubleAnimation Storyboard.TargetName="Shadow" Storyboard.TargetProperty="Opacity"
+                                                 To="0" Duration="{StaticResource FocusDuration}" EasingFunction="{StaticResource StandardEase}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <!--
+            Everything is laid out on a fixed 1920x1080 canvas and scaled to the TV, so the UI
+            looks identical on a 1080p or 4K panel. Content stays inside a 5% "title safe" margin
+            (96x54), because many TVs overscan or crop the outer edge.
+        -->
+        <Viewbox Stretch="Uniform">
+            <Grid Width="1920" Height="1080">
+                <local:HeroBackdrop x:Name="Backdrop" />
 
-        <TextBlock x:Name="HeaderText" Grid.Row="0" Text="HoloNet — Home" Foreground="{StaticResource TextBrush}"
-                   FontSize="32" FontWeight="Bold" Margin="32,24,32,12" />
+                <Grid Margin="96,54,96,54">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="380" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="1" x:Name="GridScrollViewer" VerticalScrollBarVisibility="Auto" Margin="20,0">
-            <ItemsControl x:Name="GamesItemsControl" ItemsSource="{Binding}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Style="{StaticResource CardStyle}">
-                            <Grid Margin="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                    <!-- Top bar: wordmark and location on the left, status and clock on the right. -->
+                    <Grid Grid.Row="0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="HoloNet" FontFamily="{StaticResource UiFont}" FontSize="30" FontWeight="Bold"
+                                       Foreground="{StaticResource TextBrush}" />
+                            <Rectangle Width="2" Height="26" Margin="20,0" Fill="{StaticResource MutedTextBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="LocationText" FontFamily="{StaticResource UiFont}" FontSize="30"
+                                       Foreground="{StaticResource SubTextBrush}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock x:Name="NoticeText" FontFamily="{StaticResource UiFont}" FontSize="22"
+                                       Foreground="{StaticResource WarningBrush}" VerticalAlignment="Center" Margin="0,0,36,0"
+                                       MaxWidth="1000" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="ClockText" FontFamily="{StaticResource UiFont}" FontSize="30" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
 
-                                <Border Grid.Row="0" Background="#33344A" CornerRadius="6" ClipToBounds="True">
-                                    <Grid>
-                                        <TextBlock Text="{Binding InitialsGlyph}" FontSize="48" FontWeight="Bold"
-                                                   Foreground="{StaticResource SubTextBrush}"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                   Visibility="{Binding ShowInitials, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"
-                                               Visibility="{Binding HasThumbnail, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                    </Grid>
-                                </Border>
+                    <local:HeroDetails x:Name="Hero" Grid.Row="1" Margin="0,0,0,28" />
 
-                                <TextBlock Grid.Row="1" Text="{Binding Title}" Foreground="{StaticResource TextBrush}"
-                                           FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,2" />
+                    <!--
+                        Tile grid. The negative horizontal margin plus matching padding gives
+                        the focused tile's scale and ring room to grow without being clipped.
+                        It also reaches 6px up into the hero's bottom margin (offset by the
+                        content's top padding), leaving room for the top edge fade above the
+                        focused tile's ring; see TileGridScroll for the fade and scroll rules.
+                    -->
+                    <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2" Margin="-40,-6,-40,0" Focusable="False"
+                                  VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled"
+                                  SizeChanged="OnGridViewportSizeChanged">
+                        <ItemsControl x:Name="TilesItemsControl" Margin="40,30,8,0" Focusable="False"
+                                      ItemTemplate="{StaticResource TileTemplate}">
+                            <ItemsControl.RenderTransform>
+                                <TranslateTransform x:Name="TilesOffset" />
+                            </ItemsControl.RenderTransform>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
 
-                                <TextBlock Grid.Row="2" Foreground="{StaticResource SubTextBrush}" FontSize="12"
-                                           Text="{Binding Subtitle, Mode=OneWay}" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                    <!-- Button hints for what the controller can do right now, and the app version. -->
+                    <Grid Grid.Row="3" Margin="0,16,0,0">
+                        <ItemsControl x:Name="HintsList" ItemTemplate="{StaticResource ButtonHintTemplate}"
+                                      ItemsPanel="{StaticResource HorizontalPanelTemplate}" Focusable="False" />
+                        <TextBlock x:Name="VersionText" FontFamily="{StaticResource UiFont}" FontSize="18"
+                                   Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Viewbox>
 
-        <TextBlock x:Name="StatusText" Grid.Row="2" Foreground="{StaticResource SubTextBrush}"
-                   FontSize="14" Margin="32,8,32,16" TextWrapping="Wrap" />
-
-        <TextBlock x:Name="SaveInfoText" Grid.Row="1" Foreground="{StaticResource TextBrush}"
-                   FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Right"
-                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,32,12"
-                   Background="#AA0D0D12" Padding="12,8" Visibility="Collapsed" />
+        <local:SplashOverlay x:Name="Splash" />
 
         <!--
-            Version label: small and muted in the bottom-right corner, out of the way of the
-            content grid and the status line — a common convention for kiosk/always-on apps
-            (e.g. Steam Big Picture, smart-TV app UIs) where the version is a discoverable
-            diagnostic detail, not something that should compete for attention.
+            Idle screensaver, shown after a few minutes without input so the bright tile grid
+            isn't left on for hours (an OLED burn-in risk). ScreensaverController fills it with
+            the scene chosen in Settings (see IScreensaverScene) and any input dismisses it. It
+            sits outside the Viewbox so each scene decides how it scales.
         -->
-        <TextBlock x:Name="VersionText" Grid.Row="2" Foreground="#4D9A9AA8" FontSize="11"
-                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,16,4" />
-
-        <!--
-            "Where I currently am" showcase: a larger preview of the screenshot captured the
-            last time the player quit the selected game, shown docked at the bottom-left of the
-            grid (underneath the row of cards) rather than replacing the card's own cover-art
-            thumbnail. Populated/shown from code-behind (see UpdateSaveInfo) since it tracks
-            whichever card is currently selected.
-        -->
-        <Border x:Name="ShowcaseBorder" Grid.Row="1" HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                Margin="32,0,0,12" Background="#AA0D0D12" CornerRadius="6" Padding="6" Visibility="Collapsed">
-            <Image x:Name="ShowcaseImage" Width="480" Height="270" Stretch="Uniform" />
-        </Border>
-
-        <!-- Full-screen overlay shown while an emulator has focus / during load / on error. -->
-        <Grid x:Name="OverlayGrid" Grid.RowSpan="3" Background="#DD0D0D12" Visibility="Collapsed">
-            <TextBlock x:Name="OverlayText" Foreground="{StaticResource TextBrush}" FontSize="28"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"
-                       TextAlignment="Center" MaxWidth="800" />
-        </Grid>
-
-        <!--
-            Idle screensaver: mostly-black background (so the static card grid isn't left
-            displayed for hours) with a small dim logo that continuously drifts and bounces off
-            the edges (classic "DVD logo" pattern) so no single group of pixels stays lit at
-            constant brightness — burn-in protection for OLED TVs in particular. Any input
-            dismisses it (see MainWindow.xaml.cs).
-        -->
-        <Grid x:Name="ScreensaverGrid" Grid.RowSpan="3" Background="Black" Visibility="Collapsed">
-            <TextBlock x:Name="ScreensaverLogo" Text="HoloNet" FontSize="28" FontWeight="Bold"
-                       Foreground="#33FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top">
-                <TextBlock.RenderTransform>
-                    <TranslateTransform x:Name="ScreensaverLogoTransform" />
-                </TextBlock.RenderTransform>
-            </TextBlock>
-        </Grid>
+        <Grid x:Name="ScreensaverGrid" Background="Black" Visibility="Collapsed" />
     </Grid>
 </Window>

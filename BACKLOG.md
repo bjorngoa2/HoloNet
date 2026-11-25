@@ -1,4 +1,4 @@
-﻿# HoloNet — Prioritized Backlog
+# HoloNet — Prioritized Backlog
 
 ## Codebase Snapshot
 
@@ -93,6 +93,27 @@
   - Remote access to all services from outside the LAN
 - [ ] **`ai-integration`** — Semantic search, Ollama local LLM, Semantic Kernel
   - Phase 7 — long-term
+- [x] **`prime-video-catalog`** — Catalog-only Prime Video integration in `HoloNet.Video`
+  - Metadata/browsing only (title, poster, "Included with Prime" entitlement, deep link to
+    open on Prime) via Prime's undocumented `getLandingPage`/`enrichItemMetadata`/`enrichNav`
+    endpoints. Deliberately excludes `GetVodPlaybackResources`/`GetWidevineLicense` — no
+    in-app playback, no DRM bypass. Shipped as a reduced "detail-only" MVP: `GET
+    api/v1/catalog/PrimeVideo/{id}` looks up one title by ID (home-feed browsing/pagination
+    descoped — see `PrimeVideoProvider`'s doc comments for why). Surfaced in
+    `HoloNet.TvLauncher` as a "Prime Video" folder driven by a manually-curated
+    `PrimeVideoTitleIds` watchlist (since replaced by a library managed from the launcher, see
+    `api/v1/library`).
+  - [x] **`prime-auth-playwright`** — Replaced manual cookie paste with a semi-automated
+    Playwright-driven capture (`HoloNet.PrimeAuth`, a standalone console tool): it opens a
+    real browser window, you log in normally (handles CAPTCHA/2FA yourself), the tool
+    captures the resulting session cookie and pushes it to `HoloNet.Video`'s new `PUT
+    api/v1/admin/primevideo/session-cookie` endpoint, which persists it to a mounted volume
+    (survives redeploys) and applies it immediately — no restart needed. Triggered from
+    `HoloNet.TvLauncher`'s "Prime Video" folder via a "Refresh Prime Login" tile
+    (`IPrimeAuthLauncher`, launched as a child process the same way emulators are). No
+    password storage, no bypassing Amazon's bot/CAPTCHA protections — just automates the
+    "get the cookie" step. Still requires you to physically run it (on the TV PC or your own
+    PC) whenever the cookie expires — there's no way to detect expiry proactively yet.
 
 ---
 

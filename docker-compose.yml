@@ -39,8 +39,13 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - VideoService__VideoPath=/data/videos
       - VideoService__BaseUrl=http://videos.goa.no/api/v1/videos
+      - PrimeVideo__SessionCookieFilePath=/data/state/prime-session.json
     volumes:
       - ./data/videos:/data/videos:ro
+      # Read-write, unlike the videos mount above: this is where the Prime Video session cookie
+      # captured by HoloNet.PrimeAuth (PUT api/v1/admin/primevideo/session-cookie) is persisted,
+      # so a captured login survives container recreation/redeploys, not just restarts.
+      - ./data/video-state:/data/state
     networks:
       - holonet
     restart: unless-stopped

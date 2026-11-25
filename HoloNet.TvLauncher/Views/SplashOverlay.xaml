@@ -1,0 +1,74 @@
+<UserControl x:Class="HoloNet.TvLauncher.Views.SplashOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:HoloNet.TvLauncher.Views"
+             Visibility="Collapsed" Opacity="0" Focusable="False">
+    <!--
+        Full-screen launch / status splash. Opening something shows its tile art large and
+        centred in its brand colour (the console "app launch" transition), so the hand-off to
+        the game or app - and the return from it - reads as one continuous motion rather than
+        the launcher abruptly vanishing. Also hosts errors and the update prompt, so every
+        modal state in the launcher shares one look.
+    -->
+    <Grid Background="{StaticResource BackgroundBrush}">
+        <Rectangle>
+            <Rectangle.Fill>
+                <RadialGradientBrush Center="0.5,0.42" GradientOrigin="0.5,0.42" RadiusX="0.6" RadiusY="0.75">
+                    <GradientStop x:Name="GlowStop" Color="#593D6BFF" Offset="0" />
+                    <GradientStop x:Name="GlowEdgeStop" Color="#003D6BFF" Offset="1" />
+                </RadialGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+
+        <Viewbox Stretch="Uniform">
+            <Grid Width="1920" Height="1080">
+                <StackPanel x:Name="Body" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                    <StackPanel.RenderTransform>
+                        <ScaleTransform x:Name="BodyScale" />
+                    </StackPanel.RenderTransform>
+
+                    <Grid x:Name="ArtHost" HorizontalAlignment="Center" Margin="0,0,0,48">
+                        <Border CornerRadius="{StaticResource TileCornerRadius}" Background="Black">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="60" ShadowDepth="16" Direction="270" Opacity="0.6" />
+                            </Border.Effect>
+                        </Border>
+                        <!-- No caption on the art: the title is printed large right below it. -->
+                        <ContentControl x:Name="Art" ContentTemplate="{StaticResource TileArtTemplate}" Focusable="False"
+                                        local:TileArt.ShowsTitle="False" />
+                    </Grid>
+
+                    <TextBlock x:Name="TitleText" FontFamily="{StaticResource UiFont}" FontSize="56" FontWeight="Bold"
+                               Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="1400" />
+                    <TextBlock x:Name="MessageText" FontFamily="{StaticResource UiFont}" FontSize="26"
+                               Foreground="{StaticResource SubTextBrush}" HorizontalAlignment="Center" TextAlignment="Center"
+                               TextWrapping="Wrap" MaxWidth="1100" Margin="0,14,0,0" />
+
+                    <!-- Optional text field, e.g. for pasting a link. -->
+                    <Grid x:Name="InputHost" Width="1100" Height="76" Margin="0,40,0,0" HorizontalAlignment="Center" Visibility="Collapsed">
+                        <Border CornerRadius="{StaticResource TileCornerRadius}" Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource TextBrush}" BorderThickness="3" />
+                        <TextBlock x:Name="InputPlaceholder" FontFamily="{StaticResource UiFont}" FontSize="26"
+                                   Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="30,0"
+                                   TextTrimming="CharacterEllipsis" IsHitTestVisible="False" />
+                        <TextBox x:Name="InputBox" FontFamily="{StaticResource UiFont}" FontSize="26"
+                                 Foreground="{StaticResource TextBrush}" CaretBrush="{StaticResource TextBrush}"
+                                 Background="Transparent" BorderThickness="0" Margin="26,0" VerticalAlignment="Center"
+                                 TextChanged="InputBox_TextChanged" />
+                    </Grid>
+
+                    <!-- Indeterminate progress: a short bar sliding along a thin track. -->
+                    <Canvas x:Name="ProgressTrack" Width="320" Height="4" ClipToBounds="True" Margin="0,40,0,0" HorizontalAlignment="Center">
+                        <Rectangle Width="320" Height="4" RadiusX="2" RadiusY="2" Fill="{StaticResource SurfaceBrush}" />
+                        <Rectangle x:Name="ProgressBar" Width="96" Height="4" RadiusX="2" RadiusY="2" Fill="{StaticResource TextBrush}" Canvas.Left="-96" />
+                    </Canvas>
+
+                    <ItemsControl x:Name="HintsList" ItemTemplate="{StaticResource ButtonHintTemplate}"
+                                  ItemsPanel="{StaticResource HorizontalPanelTemplate}"
+                                  HorizontalAlignment="Center" Margin="40,56,0,0" Focusable="False" />
+                </StackPanel>
+            </Grid>
+        </Viewbox>
+    </Grid>
+</UserControl>

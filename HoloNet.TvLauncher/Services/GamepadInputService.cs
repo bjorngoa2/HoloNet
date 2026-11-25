@@ -14,7 +14,13 @@ public enum GamepadButton
     Confirm,
     Cancel,
     Refresh,
-    Quit
+    Quit,
+
+    /// <summary>Triangle (PlayStation) / Y (Xbox).</summary>
+    Secondary,
+
+    /// <summary>Square (PlayStation) / X (Xbox).</summary>
+    Tertiary
 }
 
 /// <summary>
@@ -178,7 +184,9 @@ public sealed class GamepadInputService : IGamepadService
         Start = 0x0010,
         Back = 0x0020,
         A = 0x1000,
-        B = 0x2000
+        B = 0x2000,
+        X = 0x4000,
+        Y = 0x8000
     }
 
     #endregion
@@ -188,8 +196,8 @@ public sealed class GamepadInputService : IGamepadService
     private readonly RawInputGamepadReader _rawInput = new();
 
     private IntPtr _windowHandle;
-    private DirectInput? _directInput;
-    private Joystick? _directInputJoystick;
+    private DirectInputDevice? _directInputDevice;
+    private Task<DirectInputDevice?>? _directInputDiscovery;
     private int _pollsSinceDirectInputInitAttempt;
 
     private ushort _previousXInputButtons;
@@ -247,10 +255,7 @@ public sealed class GamepadInputService : IGamepadService
 
     public void ForceDirectInputReacquire()
     {
-        _directInputJoystick?.Dispose();
-        _directInputJoystick = null;
-        _directInput?.Dispose();
-        _directInput = null;
+        ReleaseDirectInput();
         _pollsSinceDirectInputInitAttempt = 0;
     }
 
@@ -317,6 +322,8 @@ public sealed class GamepadInputService : IGamepadService
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.A), pressedBefore.HasFlag(XInputButtons.A), GamepadButton.Confirm);
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.B), pressedBefore.HasFlag(XInputButtons.B), GamepadButton.Cancel);
         RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.Start), pressedBefore.HasFlag(XInputButtons.Start), GamepadButton.Refresh);
+        RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.Y), pressedBefore.HasFlag(XInputButtons.Y), GamepadButton.Secondary);
+        RaiseOnRisingEdge(pressedNow.HasFlag(XInputButtons.X), pressedBefore.HasFlag(XInputButtons.X), GamepadButton.Tertiary);
 
         if (_xInputQuitCombo.Evaluate(
                 pressedNow.HasFlag(XInputButtons.Back) && pressedNow.HasFlag(XInputButtons.Start),
@@ -349,13 +356,14 @@ public sealed class GamepadInputService : IGamepadService
         x = 32767;
         y = 32767;
 
-        if (_directInputJoystick is null && !TryInitializeDirectInput())
+        if (_directInputDevice is null && !TryAdoptDiscoveredDirectInputDevice())
             return false;
 
         try
         {
-            _directInputJoystick!.Poll();
-            var state = _directInputJoystick.GetCurrentState();
+            var joystick = _directInputDevice!.Joystick;
+            joystick.Poll();
+            var state = joystick.GetCurrentState();
             buttons = state.Buttons;
             pov = state.PointOfViewControllers.Length > 0 ? state.PointOfViewControllers[0] : -1;
             x = state.X;
@@ -365,41 +373,68 @@ public sealed class GamepadInputService : IGamepadService
         catch (SharpDX.SharpDXException)
         {
             // The device was unplugged, lost (e.g. Bluetooth sleep/reconnect), or went stale —
-            // drop it AND the cached DirectInput object so the next attempt does a fully fresh
-            // COM device enumeration rather than reusing a list that may still reference the
+            // drop it AND its DirectInput object so the next attempt does a fully fresh COM
+            // device enumeration rather than reusing a list that may still reference the
             // now-dead instance.
-            _directInputJoystick?.Dispose();
-            _directInputJoystick = null;
-            _directInput?.Dispose();
-            _directInput = null;
+            ReleaseDirectInput();
             _pollsSinceDirectInputInitAttempt = 0;
             return false;
         }
     }
 
-    private bool TryInitializeDirectInput()
+    /// <summary>
+    /// Takes over a device found by a finished background discovery, or starts a new discovery.
+    /// Enumerating DirectInput devices blocks for ~150ms when none is attached (e.g. while the
+    /// pad is asleep or only Raw Input can read it), so it never runs on the UI thread: doing
+    /// so every few polls froze every animation for a visible hitch.
+    /// </summary>
+    private bool TryAdoptDiscoveredDirectInputDevice()
     {
-        // Re-enumerating/creating a DirectInput device is relatively expensive, so only retry
-        // periodically rather than on every single poll tick while no controller is present.
-        if (_pollsSinceDirectInputInitAttempt++ % DirectInputReinitIntervalPolls != 0)
-            return false;
+        if (_directInputDiscovery is { IsCompleted: true } finished)
+        {
+            _directInputDiscovery = null;
+            if (finished.Result is { } device)
+            {
+                _directInputDevice = device;
+                _previousDirectInputButtons = (bool[])device.InitialState.Buttons.Clone();
+                _previousDirectInputPov = device.InitialState.PointOfViewControllers.Length > 0
+                    ? device.InitialState.PointOfViewControllers[0]
+                    : -1;
+                return true;
+            }
+        }
 
+        // Only retry periodically rather than on every poll tick while no controller is present.
+        if (_directInputDiscovery is null && _pollsSinceDirectInputInitAttempt++ % DirectInputReinitIntervalPolls == 0)
+        {
+            var windowHandle = _windowHandle;
+            _directInputDiscovery = Task.Run(() => DiscoverDirectInputDevice(windowHandle));
+        }
+
+        return false;
+    }
+
+    /// <summary>Enumerates and acquires the DirectInput game controller; runs on a background thread.</summary>
+    private static DirectInputDevice? DiscoverDirectInputDevice(IntPtr windowHandle)
+    {
+        var directInput = new DirectInput();
+        Joystick? joystick = null;
         try
         {
-            _directInput ??= new DirectInput();
-
-            var devices = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
+            var devices = directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
             if (devices.Count == 0)
-                return false;
+            {
+                directInput.Dispose();
+                return null;
+            }
 
             // Prefer the most recently attached device rather than always devices[0] — after a
             // Bluetooth reconnect, Windows can briefly list a stale/ghost instance ahead of the
             // real, currently-live one, so favour the last entry in the enumeration.
-            var deviceInfo = devices[^1];
-            var joystick = new Joystick(_directInput, deviceInfo.InstanceGuid);
+            joystick = new Joystick(directInput, devices[^1].InstanceGuid);
 
-            if (_windowHandle != IntPtr.Zero)
-                joystick.SetCooperativeLevel(_windowHandle, CooperativeLevel.NonExclusive | CooperativeLevel.Background);
+            if (windowHandle != IntPtr.Zero)
+                joystick.SetCooperativeLevel(windowHandle, CooperativeLevel.NonExclusive | CooperativeLevel.Background);
 
             joystick.Acquire();
 
@@ -410,22 +445,45 @@ public sealed class GamepadInputService : IGamepadService
             // verifies the device actually responds — some stale/ghost instances Acquire() fine
             // but throw immediately on the first real Poll(), which the catch below handles.
             joystick.Poll();
-            var initialState = joystick.GetCurrentState();
-
-            _directInputJoystick = joystick;
-            _previousDirectInputButtons = (bool[])initialState.Buttons.Clone();
-            _previousDirectInputPov = initialState.PointOfViewControllers.Length > 0
-                ? initialState.PointOfViewControllers[0]
-                : -1;
-            return true;
+            return new DirectInputDevice(directInput, joystick, joystick.GetCurrentState());
         }
         catch (SharpDX.SharpDXException)
         {
             // Acquisition or the verification poll failed — drop the DirectInput object too so
             // the next attempt re-enumerates from scratch instead of retrying the same stale list.
-            _directInput?.Dispose();
-            _directInput = null;
-            return false;
+            joystick?.Dispose();
+            directInput.Dispose();
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Drops the current device, and discards any discovery still in flight, since it may have
+    /// enumerated the stale instance this is being called to get rid of.
+    /// </summary>
+    private void ReleaseDirectInput()
+    {
+        _directInputDevice?.Dispose();
+        _directInputDevice = null;
+
+        _directInputDiscovery?.ContinueWith(
+            discovery => discovery.Result?.Dispose(),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        _directInputDiscovery = null;
+    }
+
+    private sealed class DirectInputDevice(DirectInput api, Joystick joystick, JoystickState initialState) : IDisposable
+    {
+        public Joystick Joystick { get; } = joystick;
+
+        public JoystickState InitialState { get; } = initialState;
+
+        public void Dispose()
+        {
+            Joystick.Dispose();
+            api.Dispose();
         }
     }
 
@@ -458,6 +516,8 @@ public sealed class GamepadInputService : IGamepadService
         RaiseButtonIfConfigured(buttons, mappings, "Confirm", GamepadButton.Confirm);
         RaiseButtonIfConfigured(buttons, mappings, "Cancel", GamepadButton.Cancel);
         RaiseButtonIfConfigured(buttons, mappings, "Refresh", GamepadButton.Refresh);
+        RaiseButtonIfConfigured(buttons, mappings, "Secondary", GamepadButton.Secondary);
+        RaiseButtonIfConfigured(buttons, mappings, "Tertiary", GamepadButton.Tertiary);
 
         if (_directInputQuitCombo.Evaluate(IsQuitComboPressed(buttons, mappings), _options.QuitHoldMilliseconds))
         {
@@ -544,8 +604,7 @@ public sealed class GamepadInputService : IGamepadService
     public void Dispose()
     {
         _timer.Stop();
-        _directInputJoystick?.Dispose();
-        _directInput?.Dispose();
+        ReleaseDirectInput();
         _rawInput.Dispose();
     }
 }

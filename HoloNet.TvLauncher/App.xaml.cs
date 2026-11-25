@@ -30,7 +30,11 @@ public partial class App : Application
         // any Encoding.GetEncoding("shift_jis") call (see Ps2MemoryCardReader).
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
+        // The content root (where appsettings*.json are read from) is the launcher's own folder,
+        // not the working directory - which is wherever a shortcut, autostart entry or shell
+        // happened to start it from.
         _host = Host.CreateDefaultBuilder()
+            .UseContentRoot(AppContext.BaseDirectory)
             .ConfigureAppConfiguration(config => config
                 .AddJsonFile("appsettings.json", optional: false)
                 // Optional, gitignored local override — lets you point GamesApiBaseUrl at a
@@ -41,17 +45,35 @@ public partial class App : Application
             {
                 services.Configure<TvLauncherOptions>(context.Configuration.GetSection("TvLauncher"));
                 services.AddHttpClient<IGamesApiClient, GamesApiClient>();
+                services.AddHttpClient<IMediaCatalogApiClient, MediaCatalogApiClient>();
+                services.AddHttpClient<IMediaLibraryApiClient, MediaLibraryApiClient>();
+                services.AddHttpClient<IWeatherService, OpenMeteoWeatherService>();
+                services.AddHttpClient<IPlaceNameResolver, BigDataCloudPlaceNameResolver>();
+                services.AddSingleton<IDeviceLocator, WindowsDeviceLocator>();
+                services.AddSingleton<IHomeLocationService, HomeLocationService>();
+                services.AddSingleton(TimeProvider.System);
+                services.AddSingleton<ILauncherSettingsStore, LauncherSettingsStore>();
+                services.AddSingleton<IScreensaverScene, AmbientClockScene>();
+                services.AddSingleton<IScreensaverScene, BouncingLogoScene>();
+                services.AddSingleton<StreamingLibrary>();
                 services.AddSingleton<IGameLauncher, GameLauncher>();
                 services.AddSingleton<IGamepadService, GamepadInputService>();
                 services.AddSingleton<ISaveStatsService, SaveStatsService>();
                 services.AddSingleton<ILocationDiscoveryService, LocationDiscoveryService>();
                 services.AddSingleton<IGameScreenshotService, GameScreenshotService>();
                 services.AddSingleton<IAppUpdateService, AppUpdateService>();
+                services.AddSingleton<IPrimeAuthLauncher, PrimeAuthLauncher>();
+                services.AddSingleton<IPrimePlayerLauncher, PrimePlayerLauncher>();
+                services.AddSingleton<IKioskBrowserLauncher, KioskBrowserLauncher>();
+                services.AddSingleton<IMediaSessionService, MediaSessionService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();
 
         await _host.StartAsync();
+
+        // Loaded before the window exists, so the first screen already reflects the saved choices.
+        await _host.Services.GetRequiredService<ILauncherSettingsStore>().LoadAsync();
 
         var mainWindow = _host.Services.GetRequiredService<MainWindow>();
         mainWindow.Show();

@@ -1,10 +1,11 @@
 using HoloNet.Portal.Configuration;
+using HoloNet.Shared.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection("Portal"));
 builder.Services.AddOpenApi();
-builder.Services.AddProblemDetails();
+builder.Services.AddHoloNetProblemDetails();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();

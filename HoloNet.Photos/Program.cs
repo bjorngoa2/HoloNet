@@ -15,7 +15,7 @@ builder.Services.AddOptions<PhotoServiceOptions>()
 builder.Services.AddScoped<IPhotoService, PhotoService>();
 
 builder.Services.AddOpenApi();
-builder.Services.AddProblemDetails();
+builder.Services.AddHoloNetProblemDetails();
 builder.Services.AddHealthChecks()
     .AddCheck("media_directory", new MediaDirectoryHealthCheck(
         builder.Configuration["PhotoService:PhotoPath"] ?? string.Empty));

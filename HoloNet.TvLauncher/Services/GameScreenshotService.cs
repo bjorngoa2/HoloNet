@@ -91,7 +91,7 @@ public class GameScreenshotService : IGameScreenshotService
             bitmap ??= CaptureFullScreenGdi(cropRect);
 
             using var _ = bitmap;
-            bitmap.Save(GetScreenshotPathForWrite(gameTitle), ImageFormat.Png);
+            SaveScreenshot(bitmap, gameTitle);
         }
         catch (Exception ex)
         {
@@ -161,7 +161,7 @@ public class GameScreenshotService : IGameScreenshotService
             try
             {
                 using var source = new Bitmap(newFile);
-                source.Save(GetScreenshotPathForWrite(gameTitle), ImageFormat.Png);
+                SaveScreenshot(source, gameTitle);
                 LogError($"Captured PCSX2 in-emulator screenshot for \"{gameTitle}\" from \"{newFile}\".");
                 return true;
             }
@@ -445,6 +445,19 @@ public class GameScreenshotService : IGameScreenshotService
 
     private static string GetScreenshotPathForWrite(string gameTitle) =>
         Path.Combine(ScreenshotsDirectory, $"{SanitizeFileName(gameTitle)}.png");
+
+    /// <summary>
+    /// Writes to a temporary file and then swaps it into place, so the launcher (which reads the
+    /// screenshot as soon as a game exits, possibly while a capture is still finishing) never
+    /// sees a half-written PNG, and a crash mid-write can't leave a corrupt one behind.
+    /// </summary>
+    private static void SaveScreenshot(Image image, string gameTitle)
+    {
+        var path = GetScreenshotPathForWrite(gameTitle);
+        var temporaryPath = path + ".tmp";
+        image.Save(temporaryPath, ImageFormat.Png);
+        File.Move(temporaryPath, path, overwrite: true);
+    }
 
     private static string SanitizeFileName(string name)
     {
