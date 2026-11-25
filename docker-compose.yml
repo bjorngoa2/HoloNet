@@ -40,6 +40,9 @@ services:
       - VideoService__VideoPath=/data/videos
       - VideoService__BaseUrl=http://videos.goa.no/api/v1/videos
       - PrimeVideo__SessionCookieFilePath=/data/state/prime-session.json
+      # The streaming library (titles added from the launcher) - kept on the state volume too,
+      # so it survives image updates instead of living in the container's own filesystem.
+      - PrimeVideo__DbPath=/data/state/holonet-video.db
     volumes:
       - ./data/videos:/data/videos:ro
       # Read-write, unlike the videos mount above: this is where the Prime Video session cookie
