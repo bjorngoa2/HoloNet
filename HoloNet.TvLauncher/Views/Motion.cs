@@ -18,7 +18,8 @@ public static class Motion
     public static readonly IEasingFunction Ease = CreateEase();
 
     /// <summary>
-    /// Whether looping animations (the splash's sliding progress bar) run. Turned off by hosts
+    /// Whether looping animations (the splash's sliding progress bar, a text field's blinking
+    /// caret) run. Turned off by hosts
     /// that capture still images of the views, such as the screenshot tests, so every capture of
     /// the same state looks the same.
     /// </summary>

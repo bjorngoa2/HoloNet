@@ -126,6 +126,10 @@ public partial class SplashOverlay : UserControl
         InputBox.Text = input.Text;
         InputHost.Visibility = Visibility.Visible;
 
+        // The blinking caret is a looping animation too, so captures hide it (see Motion.LoopsEnabled).
+        if (!Motion.LoopsEnabled)
+            InputBox.CaretBrush = Brushes.Transparent;
+
         // Focus once the field is laid out, with the text selected so typing or pasting replaces it.
         Dispatcher.BeginInvoke(() =>
         {

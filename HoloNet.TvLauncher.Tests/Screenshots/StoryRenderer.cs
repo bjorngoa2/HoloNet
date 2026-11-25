@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using HoloNet.TvLauncher.Gallery.Stories;
@@ -35,6 +37,8 @@ internal static class StoryRenderer
         view.Height = story.Size.Height;
 
         // Hosted in a real (off-screen) window, so it's loaded and animates exactly as in the app.
+        // Inside a Canvas, which lays it out at its own size: Windows shrinks a window that's bigger
+        // than the screen (CI's is smaller than 1920x1080), and WPF would clip the view to fit.
         var window = new Window
         {
             WindowStyle = WindowStyle.None,
@@ -44,7 +48,7 @@ internal static class StoryRenderer
             SizeToContent = SizeToContent.WidthAndHeight,
             Left = -20000,
             Top = -20000,
-            Content = view
+            Content = new Canvas { Children = { view } }
         };
 
         try
@@ -52,6 +56,13 @@ internal static class StoryRenderer
             window.Show();
             await Task.Delay(SettleTime);
             view.UpdateLayout();
+
+            // A view given less room than its size is clipped to it, and a capture of that would still
+            // match an approved image captured the same way, so refuse to capture it at all.
+            var slot = LayoutInformation.GetLayoutSlot(view);
+            if (slot.Width < story.Size.Width || slot.Height < story.Size.Height)
+                throw new InvalidOperationException(
+                    $"'{story.Id}' only got {slot.Width}x{slot.Height} of room for its {story.Size.Width}x{story.Size.Height}, so it would be clipped.");
 
             var bitmap = new RenderTargetBitmap((int)story.Size.Width, (int)story.Size.Height, 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(view);
