@@ -20,6 +20,8 @@ public sealed record Story(string Group, string Name, Size Size, Func<FrameworkE
 
     public override string ToString() => Id;
 
+    // Lower-case letters and digits, with runs of anything else (spaces, "·", apostrophes) as one hyphen.
     private static string Slug(string text) =>
-        string.Join('-', text.ToLowerInvariant().Split([' ', '·', '/', '(', ')', ','], StringSplitOptions.RemoveEmptyEntries));
+        string.Join('-', new string([.. text.ToLowerInvariant().Select(c => char.IsAsciiLetterOrDigit(c) ? c : ' ')])
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries));
 }
