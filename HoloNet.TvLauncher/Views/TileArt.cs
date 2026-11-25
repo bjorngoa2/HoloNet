@@ -3,7 +3,7 @@ using System.Windows;
 namespace HoloNet.TvLauncher.Views;
 
 /// <summary>
-/// Options for the shared <c>TileArtTemplate</c> (see <c>App.xaml</c>), set on any ancestor of
+/// Options for the shared <c>TileArtTemplate</c> (see <c>Themes/Theme.xaml</c>), set on any ancestor of
 /// the art and inherited down to it.
 /// </summary>
 public static class TileArt

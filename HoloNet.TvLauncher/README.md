@@ -48,7 +48,7 @@ The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps a
 - **Hero instead of captions.** Artwork tiles carry no captions; the focused tile's title, metadata, synopsis and save stats are shown large above the row (`HeroDetails`), with its artwork faded in behind them (`HeroBackdrop`).
   The one exception is tiles that share their art, such as a show's seasons, which caption it over a bottom scrim (`CardArt.CaptionsArt`) so they can be told apart.
   The backdrop also darkens under the header, so the header stays legible over bright art.
-- **Focus.** The focused tile scales up with a white focus ring and shadow, and the others dim; motion uses shared durations and easing (`Motion` in code, `FocusDuration`/`StandardEase` in `App.xaml`).
+- **Focus.** The focused tile scales up with a white focus ring and shadow, and the others dim; motion uses shared durations and easing (`Motion` in code, `FocusDuration`/`StandardEase` in `Themes/Theme.xaml`).
 - **Spatial navigation.** The D-pad moves to the nearest tile on screen in that direction (`SpatialNavigator`), and the focused row scrolls smoothly to the top.
 - **Artwork.** Tile art loads in the background and fades in (`ArtImage`); until it has loaded, the tile shows its brand colour, icon and title. Prime Video artwork is requested at display size from Amazon's image CDN (`PrimeVideoArtwork`) rather than as multi-megabyte originals, and Disney+ and HBO Max artwork likewise from their image services (`DisneyPlusArtwork`, `HboMaxArtwork`).
 - **Launch splash.** Opening anything shows the tile's art large and centred in its brand colour (`SplashOverlay`), and the splash stays up behind the game or app for the whole session. Errors and the update prompt use the same overlay, so every modal state shares one look.
@@ -72,6 +72,18 @@ The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps a
   Settings → *Check for updates* checks straight away, showing the download's progress, and offers the update at once, or says the launcher is up to date; it works even with `AutoUpdateEnabled` off.
   Installing stays in the launcher: it shows an install screen, hands over to Velopack, which swaps the files silently (a running program can't replace itself), and the new version comes back with "Updated to v…".
   Updates are only installed from that prompt; Velopack's install-on-next-launch, behind its own Windows dialog, is turned off.
+
+## Gallery and screenshot tests
+
+`HoloNet.TvLauncher.Gallery` is a small WPF app that shows the launcher's views in each of their states with made-up data, like Storybook does for web UIs: tiles (normal, focused, checked, being moved, with watch progress) and every splash (launching, errors, confirmations, text input, update download, install and restart).
+Run it with `dotnet run --project HoloNet.TvLauncher.Gallery` to try a design change without a game library, streaming sign-ins or the TV.
+Each state is a `Story` in `HoloNet.TvLauncher.Gallery/Stories`; a new view or state is a new entry there.
+
+The screenshot tests (`HoloNet.TvLauncher.Tests/Screenshots`) render every story off-screen and compare it with its approved image in `Screenshots/Approved`, so any visual change fails CI until it's approved.
+CI uploads what it rendered as the `received-screenshots` artifact.
+To approve a change, run the **Update screenshots** workflow on the pull request's branch (Actions tab); it commits the new images, so the pull request shows each change as a before/after image.
+The views load their design tokens and templates from `Themes/Theme.xaml`, which the launcher, the gallery and the tests all share.
+Screenshots only compare when rendered on the same Windows image, so CI and that workflow are pinned to the same runner.
 
 ## Playback controls
 

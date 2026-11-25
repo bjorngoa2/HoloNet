@@ -1,0 +1,51 @@
+name: Update screenshots
+
+# Approves the TvLauncher's current look: renders every gallery story on the branch it's run on,
+# commits the images that changed to HoloNet.TvLauncher.Tests/Screenshots/Approved, and re-runs
+# CI on that commit. The pull request diff then shows each change as a before/after image.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update:
+    # Must match ci.yml's runner: screenshots only compare when rendered on the same Windows image.
+    runs-on: windows-2025
+    steps:
+      - name: Refuse to commit to main
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          echo "::error::Run this on a pull request's branch, not main."
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Render and approve screenshots
+        env:
+          UPDATE_SCREENSHOTS: 'true'
+        run: dotnet test HoloNet.TvLauncher.Tests/HoloNet.TvLauncher.Tests.csproj --configuration Release --filter "FullyQualifiedName~HoloNet.TvLauncher.Tests.Screenshots"
+
+      - name: Commit changed screenshots and re-run CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add --all HoloNet.TvLauncher.Tests/Screenshots/Approved
+          if git diff --cached --quiet; then
+            echo "Screenshots already match."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update approved screenshots"
+          git push
+          gh workflow run ci.yml --ref "$GITHUB_REF_NAME"

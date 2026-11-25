@@ -3,7 +3,7 @@ namespace HoloNet.TvLauncher.Views;
 /// <summary>
 /// Icon glyphs for tiles without artwork, from the Windows system icon font ("Segoe Fluent
 /// Icons" on Windows 11, "Segoe MDL2 Assets" on Windows 10 - both share these code points, see
-/// the <c>IconFont</c> resource in <c>App.xaml</c>). Using the OS icon font keeps tiles crisp at
+/// the <c>IconFont</c> resource in <c>Themes/Theme.xaml</c>). Using the OS icon font keeps tiles crisp at
 /// any TV resolution without shipping image assets.
 /// </summary>
 public static class TileIcons

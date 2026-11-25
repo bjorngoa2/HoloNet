@@ -5,12 +5,17 @@ on:
     branches: [main, 'release/**']
   pull_request:
     branches: [main, 'release/**']
+  # Lets the "Update screenshots" workflow re-run CI on the commit it pushes, since a push made
+  # with the workflow token doesn't trigger workflows by itself.
+  workflow_dispatch:
 
 jobs:
   build:
-    # windows-latest so the TvLauncher WPF project (net10.0-windows) builds too, alongside
-    # the four cross-platform web services — one job covers the whole solution.
-    runs-on: windows-latest
+    # Windows so the TvLauncher WPF project (net10.0-windows) builds and its screenshot tests
+    # render, alongside the cross-platform web services — one job covers the whole solution.
+    # Pinned rather than windows-latest: screenshots only compare when rendered on the same
+    # Windows image, so keep this in step with update-screenshots.yml.
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
 
@@ -27,3 +32,11 @@ jobs:
 
       - name: Test
         run: dotnet test HoloNet.slnx --configuration Release --no-build
+
+      - name: Upload screenshots that don't match
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: received-screenshots
+          path: HoloNet.TvLauncher.Tests/Screenshots/Received/
+          if-no-files-found: ignore

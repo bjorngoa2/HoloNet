@@ -148,6 +148,13 @@ public partial class SplashOverlay : UserControl
         if (ProgressBar.HasAnimatedProperties)
             return;
 
+        if (!Motion.LoopsEnabled)
+        {
+            // Held still mid-track, so it still reads as "working".
+            Canvas.SetLeft(ProgressBar, (ProgressTrack.Width - _indeterminateBarWidth) / 2);
+            return;
+        }
+
         Canvas.SetLeft(ProgressBar, -_indeterminateBarWidth);
 
         var slide = new DoubleAnimation(-ProgressBar.Width, ProgressTrack.Width, ProgressCycle)
