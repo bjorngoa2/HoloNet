@@ -62,6 +62,8 @@ The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps a
 - **Screensaver.** After `ScreensaverIdleMinutes` without input, the launcher shows the screensaver chosen under Settings → Screensaver (`ScreensaverController`).
   Each style is an `IScreensaverScene`: *Ambient clock* (the default) shows a large dimmed clock, the date and the weather, and moves to a new spot every minute; *Bouncing logo* drifts a dim HoloNet logo around the screen.
   Choosing a style shows a preview, and any button dismisses it.
+  The mouse pointer is hidden over the launcher so a parked arrow can't burn in on top of the screensaver (`CursorAutoHider`).
+  Moving the mouse shows it again until it has been still for a few seconds or a button is pressed.
   The weather comes from [Open-Meteo](https://open-meteo.com/), which needs no API key, for this PC's own location from the Windows location service (`HomeLocationService`).
   The location is rounded to about a kilometre before it leaves the PC, and the place name is looked up with BigDataCloud's free reverse geocoding.
   To pin another place, set `WeatherLatitude`/`WeatherLongitude` (and optionally `WeatherLocationName`); with neither available, the weather is hidden.

@@ -35,6 +35,7 @@ public partial class MainWindow : Window
 
     private readonly FolderNavigator _navigator;
     private readonly ScreensaverController _screensaver;
+    private readonly CursorAutoHider _cursorHider;
     private readonly DispatcherTimer _clockTimer;
     private int _selectedIndex;
     private bool _isBusy;
@@ -112,6 +113,7 @@ public partial class MainWindow : Window
         _mediaSessionService = mediaSessionService;
         _options = options.Value;
 
+        _cursorHider = new CursorAutoHider(this);
         _screensaver = new ScreensaverController(_options, settingsStore, ScreensaverGrid, screensaverScenes, () => _isBusy);
         _navigator = new FolderNavigator(_options, settingsStore, new SettingsMenu(_options, settingsStore, _screensaver.Show));
 
@@ -142,6 +144,7 @@ public partial class MainWindow : Window
             _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
             _hwndSource?.RemoveHook(HandleWindowMessage);
             _screensaver.Dispose();
+            _cursorHider.Dispose();
         };
     }
 
@@ -490,6 +493,7 @@ public partial class MainWindow : Window
         GamepadDebugLog.Log($"[MainWindow] HandleButton({button}) isBusy={_isBusy} screensaverActive={_screensaver.IsActive} cardCount={_navigator.Cards.Count} selectedIndex={_selectedIndex}");
 
         _screensaver.NotifyActivity();
+        _cursorHider.Hide();
 
         if (_screensaver.IsActive)
         {
