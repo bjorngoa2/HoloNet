@@ -34,6 +34,12 @@ public sealed class AppUpdateTracker(IAppUpdateService updateService, TvLauncher
     public event Action? Changed;
 
     /// <summary>
+    /// Raised with the progress, 0–100, while a check downloads an update, whoever started the
+    /// check. May be raised on a background thread.
+    /// </summary>
+    public event Action<int>? DownloadProgress;
+
+    /// <summary>
     /// Checks for an update and downloads it, unless automatic updates are off
     /// (<see cref="TvLauncherOptions.AutoUpdateEnabled"/>) or the last check finished less than
     /// <paramref name="minimumAge"/> ago. Failures are silent; the next check tries again.
@@ -90,7 +96,7 @@ public sealed class AppUpdateTracker(IAppUpdateService updateService, TvLauncher
     {
         try
         {
-            var result = await updateService.CheckAndDownloadUpdateAsync();
+            var result = await updateService.CheckAndDownloadUpdateAsync(percent => DownloadProgress?.Invoke(percent));
             if (result.Update is { } update)
             {
                 PendingUpdate = update;

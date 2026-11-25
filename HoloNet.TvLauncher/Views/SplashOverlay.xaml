@@ -58,7 +58,7 @@
                                  TextChanged="InputBox_TextChanged" />
                     </Grid>
 
-                    <!-- Indeterminate progress: a short bar sliding along a thin track. -->
+                    <!-- Progress: a short bar sliding along a thin track, or filling it when how far along is known. -->
                     <Canvas x:Name="ProgressTrack" Width="320" Height="4" ClipToBounds="True" Margin="0,40,0,0" HorizontalAlignment="Center">
                         <Rectangle Width="320" Height="4" RadiusX="2" RadiusY="2" Fill="{StaticResource SurfaceBrush}" />
                         <Rectangle x:Name="ProgressBar" Width="96" Height="4" RadiusX="2" RadiusY="2" Fill="{StaticResource TextBrush}" Canvas.Left="-96" />

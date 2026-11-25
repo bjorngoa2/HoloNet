@@ -21,7 +21,16 @@ public partial class App : Application
         // short-circuits back out before any of the app's own startup logic below runs. Only
         // does anything when this is a Velopack-installed copy (i.e. launched via the release's
         // Setup.exe) — a portable/dev build just runs straight through as a no-op.
-        VelopackApp.Build().Run();
+        //
+        // Updates are installed only from the launcher's own prompt (see AppUpdateTracker), which
+        // keeps the whole install inside the app. Velopack's default would install a downloaded
+        // update on the next launch instead, behind its own Windows progress dialog; with that
+        // off, the launcher starts as usual and offers the downloaded update straight away.
+        var restartedAfterUpdate = false;
+        VelopackApp.Build()
+            .SetAutoApplyOnStartup(false)
+            .OnRestarted(_ => restartedAfterUpdate = true)
+            .Run();
 
         base.OnStartup(e);
 
@@ -57,6 +66,7 @@ public partial class App : Application
                 services.AddSingleton<IDeviceLocator, WindowsDeviceLocator>();
                 services.AddSingleton<IHomeLocationService, HomeLocationService>();
                 services.AddSingleton(TimeProvider.System);
+                services.AddSingleton(new AppStartup(restartedAfterUpdate));
                 services.AddSingleton<ILauncherSettingsStore, LauncherSettingsStore>();
                 services.AddSingleton<IScreensaverScene, AmbientClockScene>();
                 services.AddSingleton<IScreensaverScene, BouncingLogoScene>();

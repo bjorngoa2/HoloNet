@@ -97,6 +97,20 @@ public class AppUpdateTrackerShould
         Assert.Equal("0.7.0", tracker.PendingUpdate?.NewVersion);
     }
 
+    [Fact]
+    public async Task PassOnDownloadProgress_ToWhoeverIsWatching()
+    {
+        var tracker = Tracker();
+        var reported = new List<int>();
+        tracker.DownloadProgress += reported.Add;
+        _service.ProgressToReport = [0, 40, 100];
+        _service.Next = Ready("0.6.0");
+
+        await tracker.CheckInBackgroundAsync();
+
+        Assert.Equal([0, 40, 100], reported);
+    }
+
     [Theory]
     [InlineData(AppUpdateCheckOutcome.UpToDate)]
     [InlineData(AppUpdateCheckOutcome.NotInstalled)]
@@ -135,9 +149,17 @@ public class AppUpdateTrackerShould
 
         public string CurrentVersion => "0.5.0";
 
-        public Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default)
+        public bool RestartedAfterUpdate => false;
+
+        /// <summary>Progress reported to every check while it runs, as Velopack would while downloading.</summary>
+        public int[] ProgressToReport { get; set; } = [];
+
+        public Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(Action<int>? downloadProgress = null, CancellationToken cancellationToken = default)
         {
             Checks++;
+            foreach (var percent in ProgressToReport)
+                downloadProgress?.Invoke(percent);
+
             return Pending?.Task ?? Task.FromResult(Next);
         }
 

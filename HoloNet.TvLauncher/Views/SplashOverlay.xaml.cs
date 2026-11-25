@@ -17,9 +17,12 @@ public partial class SplashOverlay : UserControl
     private const double EntranceScale = 0.96;
     private const byte GlowAlpha = 0x59;
 
+    private readonly double _indeterminateBarWidth;
+
     public SplashOverlay()
     {
         InitializeComponent();
+        _indeterminateBarWidth = ProgressBar.Width;
     }
 
     public bool IsShown { get; private set; }
@@ -89,8 +92,24 @@ public partial class SplashOverlay : UserControl
         HintsList.ItemsSource = content.Hints;
         HintsList.Visibility = content.Hints is { Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
 
-        ProgressTrack.Visibility = content.IsWorking ? Visibility.Visible : Visibility.Hidden;
-        SetProgressRunning(content.IsWorking);
+        ProgressTrack.Visibility = content.IsWorking || content.Progress is not null ? Visibility.Visible : Visibility.Hidden;
+        if (content.Progress is { } progress)
+        {
+            ShowProgress(progress);
+        }
+        else
+        {
+            ProgressBar.Width = _indeterminateBarWidth;
+            SetProgressRunning(content.IsWorking);
+        }
+    }
+
+    /// <summary>Fills the track from the left to show how far along the work is.</summary>
+    private void ShowProgress(double progress)
+    {
+        SetProgressRunning(false);
+        Canvas.SetLeft(ProgressBar, 0);
+        ProgressBar.Width = ProgressTrack.Width * Math.Clamp(progress, 0, 1);
     }
 
     private void ApplyInput(SplashInput? input)
@@ -128,6 +147,8 @@ public partial class SplashOverlay : UserControl
 
         if (ProgressBar.HasAnimatedProperties)
             return;
+
+        Canvas.SetLeft(ProgressBar, -_indeterminateBarWidth);
 
         var slide = new DoubleAnimation(-ProgressBar.Width, ProgressTrack.Width, ProgressCycle)
         {

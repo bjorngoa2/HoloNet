@@ -19,6 +19,10 @@ public partial class MainWindow : Window
     // How long a just-started title has to show up among the system media sessions.
     private static readonly TimeSpan MediaSessionLookupTimeout = TimeSpan.FromSeconds(5);
 
+    // How long the install screen stays up before the launcher hands over to Velopack and closes,
+    // so it's rendered and readable rather than flashing past.
+    private static readonly TimeSpan InstallScreenMinimumTime = TimeSpan.FromSeconds(1.5);
+
     private readonly IGamesApiClient _gamesApiClient;
     private readonly IGameLauncher _gameLauncher;
     private readonly IGamepadService _gamepadService;
@@ -144,10 +148,21 @@ public partial class MainWindow : Window
             _hwndSource = HwndSource.FromHwnd(windowHandle);
             _hwndSource?.AddHook(HandleWindowMessage);
             _clockTimer.Start();
+
+            // Picks up where the install screen left off, while the library loads behind it.
+            if (_appUpdateService.RestartedAfterUpdate)
+            {
+                _isBusy = true;
+                Splash.Show(new SplashContent($"Updated to v{_displayVersion}", "Getting everything ready…", IsWorking: true));
+            }
+
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
             _updateScheduler.Start();
+
+            if (_appUpdateService.RestartedAfterUpdate)
+                await ConfirmUpdateFinishedAsync();
         };
         Closed += (_, _) =>
         {
@@ -308,7 +323,14 @@ public partial class MainWindow : Window
 
         if (installNow)
         {
-            Splash.Show(new SplashContent("Installing update", "HoloNet will be right back.", IsWorking: true));
+            // The new version is already downloaded; what's left is swapping the files, which
+            // Velopack can only do once the launcher has closed. It does that silently and starts
+            // the new version, which then confirms the update (see ConfirmUpdateFinishedAsync).
+            Splash.Show(new SplashContent(
+                $"Installing v{FormatDisplayVersion(update.NewVersion)}",
+                "HoloNet restarts in a moment.",
+                IsWorking: true));
+            await Task.Delay(InstallScreenMinimumTime);
             _appUpdateService.ApplyUpdateAndRestart(update);
             return;
         }
@@ -319,16 +341,49 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Ends the install that <see cref="ShowUpdateModalAsync"/> started, on the same splash: the
+    /// launcher was restarted by Velopack as the new version, so say so before handing back
+    /// control.
+    /// </summary>
+    private async Task ConfirmUpdateFinishedAsync()
+    {
+        try
+        {
+            await ShowMessageAsync(null, $"Updated to v{_displayVersion}", "HoloNet is up to date and ready to go.");
+        }
+        finally
+        {
+            Splash.Hide();
+            _isBusy = false;
+        }
+    }
+
+    /// <summary>
     /// Settings → Check for updates: checks now and offers the update straight away, or says
     /// why there isn't one.
     /// </summary>
     private async Task CheckForUpdatesAsync(CheckForUpdatesActionCardViewModel card)
     {
         _isBusy = true;
+        var isChecking = true;
+        var shownPercent = -1;
+
+        // Velopack reports progress from its download thread, often several times per percent.
+        void OnDownloadProgress(int percent) => Dispatcher.InvokeAsync(() =>
+        {
+            if (!isChecking || percent == shownPercent)
+                return;
+
+            shownPercent = percent;
+            Splash.Show(new SplashContent(card.Title, $"Downloading the update… {percent}%", card, Progress: percent / 100.0));
+        });
+
+        _updates.DownloadProgress += OnDownloadProgress;
         try
         {
             Splash.Show(new SplashContent(card.Title, "Looking for a newer version of HoloNet…", card, IsWorking: true));
             var result = await _updates.CheckNowAsync();
+            isChecking = false;
 
             if (result.Update is { } update)
             {
@@ -349,6 +404,8 @@ public partial class MainWindow : Window
         }
         finally
         {
+            isChecking = false;
+            _updates.DownloadProgress -= OnDownloadProgress;
             Splash.Hide();
             _isBusy = false;
         }
@@ -1115,7 +1172,8 @@ public partial class MainWindow : Window
     /// with OK. Input is routed to the dismissal while it's up (see <see cref="HandleButton"/>),
     /// so Confirm can't also relaunch the focused tile behind it.
     /// </summary>
-    private async Task ShowMessageAsync(IPickerCard card, string title, string? message)
+    /// <param name="card">The tile the message is about, shown above it, or <c>null</c> for app-level messages.</param>
+    private async Task ShowMessageAsync(IPickerCard? card, string title, string? message)
     {
         var wasBusy = _isBusy;
         _isBusy = true;

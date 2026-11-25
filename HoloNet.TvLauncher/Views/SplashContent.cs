@@ -10,6 +10,10 @@ namespace HoloNet.TvLauncher.Views;
 /// <param name="IsWorking">Shows an indeterminate progress indicator.</param>
 /// <param name="Input">A text field to show below the message, or <c>null</c> for none.</param>
 /// <param name="IsWarning">Shows the message in the warning colour, e.g. why an input was rejected.</param>
+/// <param name="Progress">
+/// How far along the work is, from 0 to 1, shown as a filling bar instead of the indeterminate
+/// one; <c>null</c> when it isn't known.
+/// </param>
 public sealed record SplashContent(
     string Title,
     string Message,
@@ -17,7 +21,8 @@ public sealed record SplashContent(
     bool IsWorking = false,
     IReadOnlyList<ButtonHint>? Hints = null,
     SplashInput? Input = null,
-    bool IsWarning = false)
+    bool IsWarning = false,
+    double? Progress = null)
 {
     public string AccentColor => Card?.AccentColor ?? PickerCardBase.DefaultAccentColor;
 }
