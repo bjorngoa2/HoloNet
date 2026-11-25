@@ -13,6 +13,27 @@ namespace HoloNet.TvLauncher.Services;
 /// </summary>
 public sealed record AppUpdateInfo(string CurrentVersion, string NewVersion, string? ReleaseNotesMarkdown, UpdateInfo VelopackUpdateInfo);
 
+public enum AppUpdateCheckOutcome
+{
+    /// <summary>A newer version is downloaded and ready to install (see <see cref="AppUpdateCheckResult.Update"/>).</summary>
+    UpdateReady,
+
+    /// <summary>The running version is the latest release.</summary>
+    UpToDate,
+
+    /// <summary>
+    /// This copy can't update itself: it wasn't installed with the release's Setup.exe (e.g. a
+    /// portable or dev build, see <see cref="Velopack.UpdateManager.IsInstalled"/>).
+    /// </summary>
+    NotInstalled,
+
+    /// <summary>The check or download failed, e.g. offline or rate-limited by GitHub.</summary>
+    Failed
+}
+
+/// <summary>What an update check found; <see cref="Update"/> is set only for <see cref="AppUpdateCheckOutcome.UpdateReady"/>.</summary>
+public sealed record AppUpdateCheckResult(AppUpdateCheckOutcome Outcome, AppUpdateInfo? Update = null);
+
 public interface IAppUpdateService
 {
     /// <summary>
@@ -24,13 +45,12 @@ public interface IAppUpdateService
     string CurrentVersion { get; }
 
     /// <summary>
-    /// Checks GitHub Releases for a newer version and, if one exists, downloads it in the
-    /// background. Returns <c>null</c> if already up to date, if this isn't a Velopack-installed
-    /// copy (e.g. a portable/dev build — see <see cref="Velopack.UpdateManager.IsInstalled"/>),
-    /// or if the check/download failed (e.g. offline) — callers should treat all of these the
-    /// same way: silently do nothing.
+    /// Checks GitHub Releases for a newer version and, if one exists, downloads it. Never throws:
+    /// a failed check is reported as <see cref="AppUpdateCheckOutcome.Failed"/>. Whether to check
+    /// at all (see <see cref="TvLauncherOptions.AutoUpdateEnabled"/>) is up to the caller (see
+    /// <see cref="AppUpdateTracker"/>).
     /// </summary>
-    Task<AppUpdateInfo?> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default);
+    Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Applies an already-downloaded update and restarts the app as the new version. This exits
@@ -84,35 +104,35 @@ public sealed class AppUpdateService : IAppUpdateService
         }
     }
 
-    public async Task<AppUpdateInfo?> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default)
+    public async Task<AppUpdateCheckResult> CheckAndDownloadUpdateAsync(CancellationToken cancellationToken = default)
     {
-        if (!_options.AutoUpdateEnabled)
-            return null;
-
         var updateManager = _updateManager.Value;
         if (updateManager is null || !updateManager.IsInstalled)
-            return null;
+            return new AppUpdateCheckResult(AppUpdateCheckOutcome.NotInstalled);
 
         try
         {
             var updateInfo = await updateManager.CheckForUpdatesAsync();
             if (updateInfo is null)
-                return null;
+                return new AppUpdateCheckResult(AppUpdateCheckOutcome.UpToDate);
 
+            // Velopack skips the download when this version's package is already on disk, so
+            // finding the same pending update again on a later check costs only the lookup.
             await updateManager.DownloadUpdatesAsync(updateInfo, cancelToken: cancellationToken);
 
-            return new AppUpdateInfo(
-                updateManager.CurrentVersion?.ToString() ?? "unknown",
-                updateInfo.TargetFullRelease.Version.ToString(),
-                updateInfo.TargetFullRelease.NotesMarkdown,
-                updateInfo);
+            return new AppUpdateCheckResult(
+                AppUpdateCheckOutcome.UpdateReady,
+                new AppUpdateInfo(
+                    updateManager.CurrentVersion?.ToString() ?? "unknown",
+                    updateInfo.TargetFullRelease.Version.ToString(),
+                    updateInfo.TargetFullRelease.NotesMarkdown,
+                    updateInfo));
         }
         catch (Exception)
         {
-            // Network hiccups, GitHub rate limits, etc. — an update check is opportunistic, not
-            // essential, so failures here are silently retried on the next launch rather than
-            // surfaced to the player.
-            return null;
+            // Network hiccups, GitHub rate limits, etc. An automatic check stays silent and the
+            // next one tries again; a check the player asked for says it failed.
+            return new AppUpdateCheckResult(AppUpdateCheckOutcome.Failed);
         }
     }
 

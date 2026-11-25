@@ -35,6 +35,8 @@ public partial class MainWindow : Window
 
     private readonly FolderNavigator _navigator;
     private readonly ScreensaverController _screensaver;
+    private readonly AppUpdateTracker _updates;
+    private readonly DispatcherTimer _updateCheckTimer;
     private readonly CursorAutoHider _cursorHider;
     private readonly DispatcherTimer _clockTimer;
     private int _selectedIndex;
@@ -42,8 +44,6 @@ public partial class MainWindow : Window
     private bool _isLoading;
     private CancellationTokenSource? _refreshCancellation;
     private string? _gamesApiError;
-    private AppUpdateInfo? _pendingUpdate;
-    private bool _updateDismissedThisSession;
     private HwndSource? _hwndSource;
     private TaskCompletionSource? _dismissWait;
     private TaskCompletionSource<bool>? _confirmWait;
@@ -74,6 +74,8 @@ public partial class MainWindow : Window
         public Task VisitAddTitleAction(AddTitleActionCardViewModel addTitleAction) => window.AddTitleAsync(addTitleAction);
 
         public Task VisitSettingChoice(SettingChoiceCardViewModel settingChoice) => window.ChooseSettingAsync(settingChoice);
+
+        public Task VisitCheckForUpdates(CheckForUpdatesActionCardViewModel checkForUpdates) => window.CheckForUpdatesAsync(checkForUpdates);
     }
 
     private readonly SelectionVisitor _selectionVisitor;
@@ -115,7 +117,23 @@ public partial class MainWindow : Window
 
         _cursorHider = new CursorAutoHider(this);
         _screensaver = new ScreensaverController(_options, settingsStore, ScreensaverGrid, screensaverScenes, () => _isBusy);
-        _navigator = new FolderNavigator(_options, settingsStore, new SettingsMenu(_options, settingsStore, _screensaver.Show));
+        _navigator = new FolderNavigator(
+            _options,
+            settingsStore,
+            new SettingsMenu(_options, settingsStore, _screensaver.Show, FormatDisplayVersion(_appUpdateService.CurrentVersion)));
+
+        // Checks run on the UI thread, but hop through the dispatcher anyway so a check that ever
+        // finishes elsewhere can't touch the window off-thread.
+        _updates = new AppUpdateTracker(_appUpdateService, _options, TimeProvider.System);
+        _updates.Changed += () => Dispatcher.InvokeAsync(UpdateChrome);
+        // At least 15 minutes apart whatever the setting says, to stay well inside GitHub's
+        // rate limit for unauthenticated requests.
+        _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(Math.Max(_options.UpdateCheckIntervalHours, 0.25)) };
+        _updateCheckTimer.Tick += (_, _) => _ = _updates.CheckInBackgroundAsync();
+
+        // The TV is unattended while the screensaver is up, a good moment to fetch an update so
+        // it's ready to offer when the player comes back.
+        _screensaver.Shown += () => _ = _updates.CheckInBackgroundAsync(AppUpdateTracker.ScreensaverCheckMinimumAge);
 
         _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockTimer.Tick += (_, _) => UpdateClock();
@@ -134,11 +152,13 @@ public partial class MainWindow : Window
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
-            _ = CheckForUpdateInBackgroundAsync();
+            _ = _updates.CheckInBackgroundAsync();
+            _updateCheckTimer.Start();
         };
         Closed += (_, _) =>
         {
             _clockTimer.Stop();
+            _updateCheckTimer.Stop();
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
             _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
@@ -273,31 +293,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Checks GitHub Releases for a newer version in the background (see
-    /// <see cref="IAppUpdateService"/>) and, if one downloads successfully, adds an "Update
-    /// ready" notice to the top bar and turns the Menu hint into "Install update", rather than
-    /// interrupting with a dialog. Pressing Menu then opens the confirm prompt (see
+    /// Whether an update found by <see cref="AppUpdateTracker"/> is waiting to be offered. Rather
+    /// than interrupting with a dialog, it adds an "Update ready" notice to the top bar and turns
+    /// the Menu hint into "Install update"; pressing Menu then opens the confirm prompt (see
     /// <see cref="ShowUpdateModalAsync"/>).
     /// </summary>
-    private async Task CheckForUpdateInBackgroundAsync()
-    {
-        var update = await _appUpdateService.CheckAndDownloadUpdateAsync();
-        if (update is null)
-            return;
-
-        await Dispatcher.InvokeAsync(() =>
-        {
-            _pendingUpdate = update;
-            UpdateChrome();
-        });
-    }
-
-    private bool IsUpdatePending => _pendingUpdate is not null && !_updateDismissedThisSession;
+    private bool IsUpdatePending => _updates.IsPending;
 
     /// <summary>
     /// Asks whether to install the downloaded update now, with an explicit Install/Later choice,
-    /// and applies it only if the player picks Install. "Later" is remembered for the rest of
-    /// this session (Menu goes back to meaning Refresh until the next app launch).
+    /// and applies it only if the player picks Install. "Later" puts that version off (Menu goes
+    /// back to meaning Refresh) until a newer one comes out or the player checks from Settings.
     /// </summary>
     private async Task ShowUpdateModalAsync(AppUpdateInfo update)
     {
@@ -320,8 +326,43 @@ public partial class MainWindow : Window
 
         Splash.Hide();
         _isBusy = false;
-        _updateDismissedThisSession = true;
-        UpdateChrome();
+        _updates.Dismiss();
+    }
+
+    /// <summary>
+    /// Settings → Check for updates: checks now and offers the update straight away, or says
+    /// why there isn't one.
+    /// </summary>
+    private async Task CheckForUpdatesAsync(CheckForUpdatesActionCardViewModel card)
+    {
+        _isBusy = true;
+        try
+        {
+            Splash.Show(new SplashContent(card.Title, "Looking for a newer version of HoloNet…", card, IsWorking: true));
+            var result = await _updates.CheckNowAsync();
+
+            if (result.Update is { } update)
+            {
+                await ShowUpdateModalAsync(update);
+                return;
+            }
+
+            var (title, message) = result.Outcome switch
+            {
+                AppUpdateCheckOutcome.UpToDate =>
+                    ("HoloNet is up to date", $"v{FormatDisplayVersion(_appUpdateService.CurrentVersion)} is the latest version."),
+                AppUpdateCheckOutcome.NotInstalled =>
+                    ("This copy can't update itself", "Updates only work for HoloNet installed with its Setup program from GitHub."),
+                _ =>
+                    ("Couldn't check for updates", "GitHub couldn't be reached. Check the internet connection and try again.")
+            };
+            await ShowErrorAsync(card, title, message);
+        }
+        finally
+        {
+            Splash.Hide();
+            _isBusy = false;
+        }
     }
 
     /// <summary>
@@ -428,8 +469,8 @@ public partial class MainWindow : Window
         if (_isLoading)
             return ("Loading…", false);
 
-        return _pendingUpdate is not null && IsUpdatePending
-            ? ($"Update v{FormatDisplayVersion(_pendingUpdate.NewVersion)} ready", false)
+        return _updates is { IsPending: true, PendingUpdate: { } pendingUpdate }
+            ? ($"Update v{FormatDisplayVersion(pendingUpdate.NewVersion)} ready", false)
             : (string.Empty, false);
     }
 
@@ -560,8 +601,8 @@ public partial class MainWindow : Window
             case GamepadButton.Tertiary:
                 await RemoveSelectedTitleAsync();
                 break;
-            case GamepadButton.Refresh when IsUpdatePending:
-                await ShowUpdateModalAsync(_pendingUpdate!);
+            case GamepadButton.Refresh when _updates is { IsPending: true, PendingUpdate: { } pendingUpdate }:
+                await ShowUpdateModalAsync(pendingUpdate);
                 break;
             case GamepadButton.Refresh:
                 await RefreshAsync();

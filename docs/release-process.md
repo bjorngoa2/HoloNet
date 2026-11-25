@@ -51,9 +51,11 @@ installer/updater attached to the GitHub Release.
     creates a shortcut — after this, do **not** replace it with a plain zip/portable copy, since
     auto-update only works for an installed copy (`UpdateManager.IsInstalled`).
   - **Every release after that:** nothing to do manually. TvLauncher checks GitHub Releases in
-    the background on each launch, downloads a newer version silently, and shows a "🔔 Update
-    ready" hint in its status line — press Start to review and confirm, or ignore it and keep
-    playing (see `HoloNet.TvLauncher/Services/AppUpdateService.cs`).
+    the background at startup, every few hours and when the screensaver comes on, downloads a
+    newer version silently, and shows an "Update ready" notice in its top bar — press Menu to
+    review and confirm, or ignore it and keep playing (see
+    `HoloNet.TvLauncher/Services/AppUpdateTracker.cs`). To get a release onto the TV straight
+    away, use Settings → Check for updates.
   - Rolling back TvLauncher: run an older release's `-Setup.exe` again, or use
     `vpk download github` + `vpk pack`/republish locally if you need to force a downgrade.
 

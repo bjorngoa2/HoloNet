@@ -22,6 +22,7 @@ public static class TileIcons
     public const string Check = "\uE73E";
     public const string Clock = "\uE823";
     public const string Screensaver = "\uE708";
+    public const string Update = "\uE777";
 
     private static readonly Dictionary<string, string> ByName = new(StringComparer.OrdinalIgnoreCase)
     {

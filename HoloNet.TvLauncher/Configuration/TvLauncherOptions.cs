@@ -251,12 +251,20 @@ public class TvLauncherOptions
     public Dictionary<string, string> PlatformDisplayNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Whether TvLauncher checks GitHub Releases for a newer version on startup and, once
-    /// downloaded, offers to install it (see <see cref="Services.IAppUpdateService"/>). Only
-    /// takes effect for a Velopack-installed copy (i.e. installed via the release's Setup.exe);
-    /// a portable/dev build silently skips the check entirely. Defaults to <c>true</c>.
+    /// Whether TvLauncher checks GitHub Releases for a newer version on its own (at startup,
+    /// every <see cref="UpdateCheckIntervalHours"/> and when the screensaver comes on) and, once
+    /// downloaded, offers to install it (see <see cref="Services.AppUpdateTracker"/>). Settings →
+    /// Check for updates still works when this is off. Only a Velopack-installed copy (installed
+    /// via the release's Setup.exe) can update; a portable/dev build skips the check. Defaults to
+    /// <c>true</c>.
     /// </summary>
     public bool AutoUpdateEnabled { get; set; } = true;
+
+    /// <summary>
+    /// How many hours apart the automatic update checks are while the launcher stays open (see
+    /// <see cref="AutoUpdateEnabled"/>), so a release reaches a TV that's never restarted.
+    /// </summary>
+    public double UpdateCheckIntervalHours { get; set; } = 4;
 
     /// <summary>
     /// GitHub repository URL used as the Velopack update feed, e.g.

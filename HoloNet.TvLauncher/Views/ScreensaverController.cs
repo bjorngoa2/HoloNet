@@ -27,6 +27,9 @@ public sealed class ScreensaverController : IDisposable
 
     public bool IsActive => _activeScene is not null;
 
+    /// <summary>Raised each time the screensaver comes on, including for a preview.</summary>
+    public event Action? Shown;
+
     /// <param name="overlay">The full-window panel the scenes are drawn in.</param>
     /// <param name="isSuppressed">
     /// Checked before showing the screensaver, e.g. so it doesn't take over while an emulator
@@ -89,6 +92,7 @@ public sealed class ScreensaverController : IDisposable
         _overlay.Opacity = 0;
         Motion.FadeTo(_overlay, 1, Motion.Crossfade);
         scene.Start();
+        Shown?.Invoke();
     }
 
     /// <summary>Hides the screensaver at once, so the launcher responds to the same press.</summary>
