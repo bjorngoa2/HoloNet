@@ -1,0 +1,70 @@
+name: Update screenshots
+
+# Approves the TvLauncher's current look: renders every gallery story on a pull request's branch,
+# commits the images that changed to HoloNet.TvLauncher.Tests/Screenshots/Approved, and re-runs
+# CI on that commit. The pull request diff then shows each change as a before/after image.
+#
+# Start it by adding the "approve-screenshots" label to the pull request (it removes the label
+# when done, so it can be added again), or from the Actions tab on the branch.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'approve-screenshots'
+    # Must match ci.yml's runner: screenshots only compare when rendered on the same Windows image.
+    runs-on: windows-2025
+    env:
+      BRANCH: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Refuse to commit to main
+        if: env.BRANCH == 'main'
+        shell: bash
+        run: |
+          echo "::error::Run this on a pull request's branch, not main."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BRANCH }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Render and approve screenshots
+        env:
+          UPDATE_SCREENSHOTS: 'true'
+        run: dotnet test HoloNet.TvLauncher.Tests/HoloNet.TvLauncher.Tests.csproj --configuration Release --filter "FullyQualifiedName~HoloNet.TvLauncher.Tests.Screenshots"
+
+      - name: Commit changed screenshots and re-run CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add --all HoloNet.TvLauncher.Tests/Screenshots/Approved
+          if git diff --cached --quiet; then
+            echo "Screenshots already match."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update approved screenshots"
+          git push origin "HEAD:$BRANCH"
+          gh workflow run ci.yml --ref "$BRANCH" \
+            || echo "::warning::Couldn't re-run CI on the new commit (ci.yml must be on main with workflow_dispatch). Push to the branch to run it."
+
+      - name: Remove the label, so it can be added again
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr edit "${{ github.event.pull_request.number }}" --remove-label approve-screenshots --repo "$GITHUB_REPOSITORY"

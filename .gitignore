@@ -116,3 +116,6 @@ HoloNet.TvLauncher/screenshot-errors.log
 # Reference PDFs (design patterns / refactoring material downloaded for personal study —
 # not project-related, not meant to be committed).
 practices/**/*.pdf
+
+# Screenshot tests: what was rendered when it didn't match the approved image (uploaded by CI).
+HoloNet.TvLauncher.Tests/Screenshots/Received/

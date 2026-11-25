@@ -5,7 +5,7 @@ using System.Windows.Data;
 namespace HoloNet.TvLauncher.Views;
 
 /// <summary>
-/// Converters backing the picker card's progress-bar overlay (see <c>MainWindow.xaml</c>'s
+/// Converters backing the picker card's progress-bar overlay (see <c>Themes/Theme.xaml</c>'s
 /// shared card <c>DataTemplate</c>), driven purely by <see cref="IPickerCard.ProgressPercentage"/>
 /// (0-100, or <c>null</c> for "no progress data").
 /// </summary>

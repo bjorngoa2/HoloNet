@@ -1,0 +1,42 @@
+<Window x:Class="HoloNet.TvLauncher.Gallery.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="HoloNet TV Launcher Gallery"
+        Width="1600" Height="900"
+        WindowState="Maximized"
+        Background="#16161D">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Every story, grouped; the arrow keys step through them. -->
+        <ListBox x:Name="StoryList" Grid.Column="0" Background="#101016" BorderThickness="0"
+                 Foreground="{StaticResource TextBrush}" FontFamily="{StaticResource UiFont}" FontSize="15"
+                 SelectionChanged="StoryList_SelectionChanged">
+            <ListBox.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.HeaderTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" Margin="12,16,12,6" FontWeight="SemiBold"
+                                       Foreground="{StaticResource SubTextBrush}" />
+                        </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </ListBox.GroupStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" Margin="12,4" />
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- The selected story at its real size, scaled to fit, the way the TV scales the launcher. -->
+        <Viewbox Grid.Column="1" Margin="24" Stretch="Uniform">
+            <Border BorderBrush="#33FFFFFF" BorderThickness="1">
+                <ContentPresenter x:Name="Preview" />
+            </Border>
+        </Viewbox>
+    </Grid>
+</Window>

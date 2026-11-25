@@ -126,6 +126,10 @@ public partial class SplashOverlay : UserControl
         InputBox.Text = input.Text;
         InputHost.Visibility = Visibility.Visible;
 
+        // The blinking caret is a looping animation too, so captures hide it (see Motion.LoopsEnabled).
+        if (!Motion.LoopsEnabled)
+            InputBox.CaretBrush = Brushes.Transparent;
+
         // Focus once the field is laid out, with the text selected so typing or pasting replaces it.
         Dispatcher.BeginInvoke(() =>
         {
@@ -147,6 +151,13 @@ public partial class SplashOverlay : UserControl
 
         if (ProgressBar.HasAnimatedProperties)
             return;
+
+        if (!Motion.LoopsEnabled)
+        {
+            // Held still mid-track, so it still reads as "working".
+            Canvas.SetLeft(ProgressBar, (ProgressTrack.Width - _indeterminateBarWidth) / 2);
+            return;
+        }
 
         Canvas.SetLeft(ProgressBar, -_indeterminateBarWidth);
 

@@ -7,7 +7,7 @@ namespace HoloNet.TvLauncher.Views;
 /// Shared motion tokens, so every transition in the launcher moves with the same rhythm: short
 /// decelerating eases (fast out of the gate, settling gently), the curve TV platforms use
 /// because it makes focus feel immediately responsive to a D-pad press.
-/// The XAML equivalents live in <c>App.xaml</c> (<c>FocusDuration</c>, <c>StandardEase</c>); focus
+/// The XAML equivalents live in <c>Themes/Theme.xaml</c> (<c>FocusDuration</c>, <c>StandardEase</c>); focus
 /// timing exists only there, since only the tile template animates focus.
 /// </summary>
 public static class Motion
@@ -16,6 +16,14 @@ public static class Motion
     public static readonly Duration Crossfade = new(TimeSpan.FromMilliseconds(450));
 
     public static readonly IEasingFunction Ease = CreateEase();
+
+    /// <summary>
+    /// Whether looping animations (the splash's sliding progress bar, a text field's blinking
+    /// caret) run. Turned off by hosts
+    /// that capture still images of the views, such as the screenshot tests, so every capture of
+    /// the same state looks the same.
+    /// </summary>
+    public static bool LoopsEnabled { get; set; } = true;
 
     public static DoubleAnimation To(double value, Duration duration) => new(value, duration) { EasingFunction = Ease };
 
