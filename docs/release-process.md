@@ -25,6 +25,15 @@ installer/updater attached to the GitHub Release.
    The tag — not the branch name — is what `release.yml` reacts to, so tagging is what
    actually triggers building/publishing the images, packing the TvLauncher Velopack release,
    and creating the GitHub Release.
+
+   Or, without pushing a tag yourself (e.g. from your phone, or from a Claude Code cloud
+   session, whose git access can only push its own branch): run the **Release** workflow
+   manually on the release branch (or `main`) with the version, e.g. `1.4.0` — from the
+   Actions tab, or `gh workflow run release.yml --ref release/1.4.0 -f version=1.4.0`. It
+   builds and publishes exactly the same, and creates the `v1.4.0` tag on that commit when it
+   creates the GitHub Release, so the tag only exists once the release does. It refuses a
+   version that isn't `X.Y.Z` (optionally `-suffix`), a tag that already exists, or a branch
+   other than `main` and `release/*`.
 4. Merge the release branch back into `main` (fast-forward or a merge commit) so any
    release-branch-only fixes aren't lost, then delete the release branch.
 
