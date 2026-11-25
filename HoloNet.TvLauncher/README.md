@@ -81,7 +81,7 @@ Each state is a `Story` in `HoloNet.TvLauncher.Gallery/Stories`; a new view or s
 
 The screenshot tests (`HoloNet.TvLauncher.Tests/Screenshots`) render every story off-screen and compare it with its approved image in `Screenshots/Approved`, so any visual change fails CI until it's approved.
 CI uploads what it rendered as the `received-screenshots` artifact.
-To approve a change, run the **Update screenshots** workflow on the pull request's branch (Actions tab); it commits the new images, so the pull request shows each change as a before/after image.
+To approve a change, add the `approve-screenshots` label to the pull request (or run the **Update screenshots** workflow on its branch from the Actions tab); it commits the new images, so the pull request shows each change as a before/after image.
 The views load their design tokens and templates from `Themes/Theme.xaml`, which the launcher, the gallery and the tests all share.
 Screenshots only compare when rendered on the same Windows image, so CI and that workflow are pinned to the same runner.
 

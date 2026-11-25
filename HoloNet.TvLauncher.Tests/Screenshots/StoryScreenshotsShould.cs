@@ -11,9 +11,9 @@ namespace HoloNet.TvLauncher.Tests.Screenshots;
 /// </summary>
 /// <remarks>
 /// A mismatch writes what was rendered to <c>Screenshots/Received</c>, which CI uploads. To
-/// approve a change, run the "Update screenshots" workflow on the branch: it renders with
-/// <c>UPDATE_SCREENSHOTS=true</c>, which writes the approved images instead of comparing, and
-/// commits them. Screenshots are only comparable when rendered on the same Windows image, so
+/// approve a change, add the <c>approve-screenshots</c> label to the pull request, which runs the
+/// "Update screenshots" workflow: it renders with <c>UPDATE_SCREENSHOTS=true</c>, which writes the
+/// approved images instead of comparing, and commits them. Screenshots are only comparable when rendered on the same Windows image, so
 /// that workflow and CI both use the same runner.
 /// </remarks>
 public class StoryScreenshotsShould
@@ -53,7 +53,7 @@ public class StoryScreenshotsShould
 
         Png.Write(rendered, receivedPath);
         Assert.Fail(approved is null
-            ? $"'{story.Id}' has no approved screenshot yet. Check {receivedPath}, then run the \"Update screenshots\" workflow to approve it."
+            ? $"'{story.Id}' has no approved screenshot yet. Check {receivedPath}, then add the approve-screenshots label to the pull request to approve it."
             : differentPixels is null
                 ? $"'{story.Id}' rendered at a different size than its approved screenshot. See {receivedPath}."
                 : $"'{story.Id}' looks different from its approved screenshot ({differentPixels} pixels). See {receivedPath}.");
