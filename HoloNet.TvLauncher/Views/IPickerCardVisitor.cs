@@ -6,7 +6,8 @@ namespace HoloNet.TvLauncher.Views;
 /// without downcasting/type-checking against <see cref="FolderCardViewModel"/>,
 /// <see cref="ShortcutCardViewModel"/>, <see cref="GameCardViewModel"/>,
 /// <see cref="MediaCardViewModel"/>, <see cref="PrimeAuthActionCardViewModel"/>,
-/// <see cref="AddTitleActionCardViewModel"/>, and <see cref="SettingChoiceCardViewModel"/> — the
+/// <see cref="AddTitleActionCardViewModel"/>, <see cref="SettingChoiceCardViewModel"/> and
+/// <see cref="CheckForUpdatesActionCardViewModel"/> — the
 /// compiler enforces that every card kind is handled, and adding a new kind is a compile error
 /// here rather than a silently-missed branch elsewhere.
 /// </summary>
@@ -25,4 +26,6 @@ public interface IPickerCardVisitor<out TResult>
     TResult VisitAddTitleAction(AddTitleActionCardViewModel addTitleAction);
 
     TResult VisitSettingChoice(SettingChoiceCardViewModel settingChoice);
+
+    TResult VisitCheckForUpdates(CheckForUpdatesActionCardViewModel checkForUpdates);
 }

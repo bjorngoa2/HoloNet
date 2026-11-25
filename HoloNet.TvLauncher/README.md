@@ -67,6 +67,9 @@ The UI follows the "10-foot" patterns of Google TV, tvOS and Xbox, so web apps a
   The weather comes from [Open-Meteo](https://open-meteo.com/), which needs no API key, for this PC's own location from the Windows location service (`HomeLocationService`).
   The location is rounded to about a kilometre before it leaves the PC, and the place name is looked up with BigDataCloud's free reverse geocoding.
   To pin another place, set `WeatherLatitude`/`WeatherLongitude` (and optionally `WeatherLocationName`); with neither available, the weather is hidden.
+- **Updates.** An installed launcher looks for a new release on GitHub at startup, every `UpdateCheckIntervalHours` (4 by default) and when the screensaver comes on, and downloads it in the background (`AppUpdateTracker`).
+  The top bar then says the update is ready and Menu turns into "Install update"; choosing *Later* puts that version off until a newer one comes out.
+  Settings → *Check for updates* checks straight away and offers the update at once, or says the launcher is up to date; it works even with `AutoUpdateEnabled` off.
 
 ## Playback controls
 

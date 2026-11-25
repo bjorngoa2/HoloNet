@@ -11,7 +11,7 @@ public class SettingsMenuShould
     {
         var store = new FakeLauncherSettingsStore(new LauncherSettings(ScreensaverStyle.AmbientClock));
         var previews = 0;
-        var screensaverFolder = OpenScreensaverFolder(new SettingsMenu(new TvLauncherOptions(), store, () => previews++));
+        var screensaverFolder = OpenScreensaverFolder(Menu(store, () => previews++));
         var options = screensaverFolder.GetChildren().Cast<SettingChoiceCardViewModel>().ToList();
         var ambient = options.Single(o => o.Title == "Ambient clock");
         var bouncing = options.Single(o => o.Title == "Bouncing logo");
@@ -27,6 +27,20 @@ public class SettingsMenuShould
         Assert.Equal("Screensaver · In use", bouncing.Subtitle);
         Assert.Equal("Bouncing logo", screensaverFolder.Subtitle);
     }
+
+    [Fact]
+    public void OfferAnUpdateCheck_ShowingTheRunningVersion_WithoutCountingItAsASetting()
+    {
+        var settings = Menu(new FakeLauncherSettingsStore()).CreateFolder();
+
+        var checkForUpdates = Assert.IsType<CheckForUpdatesActionCardViewModel>(Assert.Single(settings.GetChildren(), card => card.Title == "Check for updates"));
+        Assert.Equal("Version 0.6.0", checkForUpdates.Subtitle);
+        Assert.Contains("HoloNet 0.6.0", checkForUpdates.Description);
+        Assert.Equal("1 setting", settings.Subtitle);
+    }
+
+    private static SettingsMenu Menu(FakeLauncherSettingsStore store, Action? previewScreensaver = null) =>
+        new(new TvLauncherOptions(), store, previewScreensaver ?? (() => { }), currentVersion: "0.6.0");
 
     private static FolderCardViewModel OpenScreensaverFolder(SettingsMenu menu) =>
         Assert.IsType<SettingFolderCardViewModel>(

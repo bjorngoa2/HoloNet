@@ -10,7 +10,12 @@ namespace HoloNet.TvLauncher.Views;
 /// controller like everything else, and saved by <see cref="ILauncherSettingsStore"/>.
 /// </summary>
 /// <param name="previewScreensaver">Shows the screensaver straight after one is chosen, as a preview.</param>
-public sealed class SettingsMenu(TvLauncherOptions options, ILauncherSettingsStore settingsStore, Action previewScreensaver)
+/// <param name="currentVersion">The running version, for display, e.g. "0.6.0".</param>
+public sealed class SettingsMenu(
+    TvLauncherOptions options,
+    ILauncherSettingsStore settingsStore,
+    Action previewScreensaver,
+    string currentVersion)
 {
     /// <summary>A neutral slate, so Settings doesn't compete with the content tiles' brand colours.</summary>
     public const string AccentColor = "#4A5468";
@@ -27,7 +32,7 @@ public sealed class SettingsMenu(TvLauncherOptions options, ILauncherSettingsSto
 
     public FolderCardViewModel CreateFolder()
     {
-        var settingCount = CreateSettings().Count;
+        var settingCount = CreateSettings().OfType<SettingFolderCardViewModel>().Count();
         return new FolderCardViewModel(
             "Settings",
             $"{settingCount} setting{(settingCount == 1 ? "" : "s")}",
@@ -38,7 +43,8 @@ public sealed class SettingsMenu(TvLauncherOptions options, ILauncherSettingsSto
                 Description: "Choose how HoloNet looks and behaves on this TV."));
     }
 
-    private List<IPickerCard> CreateSettings() => [CreateScreensaverFolder()];
+    private List<IPickerCard> CreateSettings() =>
+        [CreateScreensaverFolder(), new CheckForUpdatesActionCardViewModel(currentVersion)];
 
     private SettingFolderCardViewModel CreateScreensaverFolder() => new(
         "Screensaver",

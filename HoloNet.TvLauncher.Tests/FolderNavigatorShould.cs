@@ -22,7 +22,7 @@ public class FolderNavigatorShould
     private static FolderNavigator Navigator(TvLauncherOptions options, FakeLauncherSettingsStore? settingsStore = null)
     {
         settingsStore ??= new FakeLauncherSettingsStore();
-        return new(options, settingsStore, new SettingsMenu(options, settingsStore, previewScreensaver: () => { }));
+        return new(options, settingsStore, new SettingsMenu(options, settingsStore, previewScreensaver: () => { }, currentVersion: "1.0.0"));
     }
 
     /// <summary>Games, both streaming services and two shortcuts, then Settings.</summary>
