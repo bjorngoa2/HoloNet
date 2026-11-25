@@ -261,8 +261,15 @@ public class TvLauncherOptions
     public bool AutoUpdateEnabled { get; set; } = true;
 
     /// <summary>
+    /// The shortest allowed <see cref="UpdateCheckIntervalHours"/>, to stay well inside GitHub's
+    /// rate limit for unauthenticated requests. Enforced at startup (see <c>App.xaml.cs</c>).
+    /// </summary>
+    public const double MinimumUpdateCheckIntervalHours = 0.25;
+
+    /// <summary>
     /// How many hours apart the automatic update checks are while the launcher stays open (see
-    /// <see cref="AutoUpdateEnabled"/>), so a release reaches a TV that's never restarted.
+    /// <see cref="AutoUpdateEnabled"/>), so a release reaches a TV that's never restarted. At
+    /// least <see cref="MinimumUpdateCheckIntervalHours"/>.
     /// </summary>
     public double UpdateCheckIntervalHours { get; set; } = 4;
 

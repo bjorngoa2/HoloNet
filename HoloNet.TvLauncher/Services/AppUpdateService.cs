@@ -1,5 +1,6 @@
 using System.Reflection;
 using HoloNet.TvLauncher.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Velopack;
 using Velopack.Sources;
@@ -31,8 +32,30 @@ public enum AppUpdateCheckOutcome
     Failed
 }
 
-/// <summary>What an update check found; <see cref="Update"/> is set only for <see cref="AppUpdateCheckOutcome.UpdateReady"/>.</summary>
-public sealed record AppUpdateCheckResult(AppUpdateCheckOutcome Outcome, AppUpdateInfo? Update = null);
+/// <summary>
+/// What an update check found. Built only through the factory members, so <see cref="Update"/>
+/// is set exactly when <see cref="Outcome"/> is <see cref="AppUpdateCheckOutcome.UpdateReady"/>.
+/// </summary>
+public sealed record AppUpdateCheckResult
+{
+    private AppUpdateCheckResult(AppUpdateCheckOutcome outcome, AppUpdateInfo? update)
+    {
+        Outcome = outcome;
+        Update = update;
+    }
+
+    public static AppUpdateCheckResult UpToDate { get; } = new(AppUpdateCheckOutcome.UpToDate, null);
+
+    public static AppUpdateCheckResult NotInstalled { get; } = new(AppUpdateCheckOutcome.NotInstalled, null);
+
+    public static AppUpdateCheckResult Failed { get; } = new(AppUpdateCheckOutcome.Failed, null);
+
+    public AppUpdateCheckOutcome Outcome { get; }
+
+    public AppUpdateInfo? Update { get; }
+
+    public static AppUpdateCheckResult Ready(AppUpdateInfo update) => new(AppUpdateCheckOutcome.UpdateReady, update);
+}
 
 public interface IAppUpdateService
 {
@@ -63,11 +86,13 @@ public interface IAppUpdateService
 public sealed class AppUpdateService : IAppUpdateService
 {
     private readonly TvLauncherOptions _options;
+    private readonly ILogger<AppUpdateService> _logger;
     private readonly Lazy<UpdateManager?> _updateManager;
 
-    public AppUpdateService(IOptions<TvLauncherOptions> options)
+    public AppUpdateService(IOptions<TvLauncherOptions> options, ILogger<AppUpdateService> logger)
     {
         _options = options.Value;
+        _logger = logger;
         _updateManager = new Lazy<UpdateManager?>(() =>
         {
             try
@@ -108,31 +133,31 @@ public sealed class AppUpdateService : IAppUpdateService
     {
         var updateManager = _updateManager.Value;
         if (updateManager is null || !updateManager.IsInstalled)
-            return new AppUpdateCheckResult(AppUpdateCheckOutcome.NotInstalled);
+            return AppUpdateCheckResult.NotInstalled;
 
         try
         {
             var updateInfo = await updateManager.CheckForUpdatesAsync();
             if (updateInfo is null)
-                return new AppUpdateCheckResult(AppUpdateCheckOutcome.UpToDate);
+                return AppUpdateCheckResult.UpToDate;
 
             // Velopack skips the download when this version's package is already on disk, so
             // finding the same pending update again on a later check costs only the lookup.
             await updateManager.DownloadUpdatesAsync(updateInfo, cancelToken: cancellationToken);
 
-            return new AppUpdateCheckResult(
-                AppUpdateCheckOutcome.UpdateReady,
-                new AppUpdateInfo(
-                    updateManager.CurrentVersion?.ToString() ?? "unknown",
-                    updateInfo.TargetFullRelease.Version.ToString(),
-                    updateInfo.TargetFullRelease.NotesMarkdown,
-                    updateInfo));
+            return AppUpdateCheckResult.Ready(new AppUpdateInfo(
+                updateManager.CurrentVersion?.ToString() ?? "unknown",
+                updateInfo.TargetFullRelease.Version.ToString(),
+                updateInfo.TargetFullRelease.NotesMarkdown,
+                updateInfo));
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // Network hiccups, GitHub rate limits, etc. An automatic check stays silent and the
-            // next one tries again; a check the player asked for says it failed.
-            return new AppUpdateCheckResult(AppUpdateCheckOutcome.Failed);
+            // Network hiccups, GitHub rate limits, etc. An automatic check stays quiet on screen
+            // and the next one tries again; a check the player asked for says it failed. Logged
+            // either way, so updates that keep failing can be diagnosed.
+            _logger.LogWarning(exception, "Checking {RepositoryUrl} for a TvLauncher update failed", _options.UpdateRepositoryUrl);
+            return AppUpdateCheckResult.Failed;
         }
     }
 

@@ -3,11 +3,11 @@ using HoloNet.TvLauncher.Configuration;
 namespace HoloNet.TvLauncher.Services;
 
 /// <summary>
-/// Decides when to look for an update and remembers what was found, so the launcher (which can
-/// stay open on the TV for days) notices a new release without being restarted. Checks run in
-/// the background at startup, every <see cref="TvLauncherOptions.UpdateCheckIntervalHours"/> and
-/// when the screensaver comes on, and on demand from Settings (see <see cref="CheckNowAsync"/>).
-/// Overlapping requests share one check, so GitHub is never asked twice at once.
+/// Runs update checks and remembers what they found, so the launcher (which can stay open on the
+/// TV for days) notices a new release without being restarted. Background checks are started by
+/// <see cref="Views.AppUpdateScheduler"/>, and the player can check from Settings (see
+/// <see cref="CheckNowAsync"/>). Overlapping requests share one check, so GitHub is never asked
+/// twice at once. Not thread-safe: call it from the UI thread.
 /// </summary>
 public sealed class AppUpdateTracker(IAppUpdateService updateService, TvLauncherOptions options, TimeProvider timeProvider)
 {

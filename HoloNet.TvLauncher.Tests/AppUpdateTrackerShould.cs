@@ -69,7 +69,7 @@ public class AppUpdateTrackerShould
 
         // Once it's done, the next request checks again rather than reusing the old answer.
         _service.Pending = null;
-        _service.Next = new AppUpdateCheckResult(AppUpdateCheckOutcome.UpToDate);
+        _service.Next = AppUpdateCheckResult.UpToDate;
         await tracker.CheckNowAsync();
         Assert.Equal(2, _service.Checks);
     }
@@ -104,11 +104,17 @@ public class AppUpdateTrackerShould
     public async Task ReportWhyThereIsNoUpdate_WhenAsked(AppUpdateCheckOutcome outcome)
     {
         var tracker = Tracker();
-        _service.Next = new AppUpdateCheckResult(outcome);
+        _service.Next = outcome switch
+        {
+            AppUpdateCheckOutcome.UpToDate => AppUpdateCheckResult.UpToDate,
+            AppUpdateCheckOutcome.NotInstalled => AppUpdateCheckResult.NotInstalled,
+            _ => AppUpdateCheckResult.Failed
+        };
 
         var result = await tracker.CheckNowAsync();
 
         Assert.Equal(outcome, result.Outcome);
+        Assert.Null(result.Update);
         Assert.False(tracker.IsPending);
     }
 
@@ -116,11 +122,11 @@ public class AppUpdateTrackerShould
         new(_service, options ?? new TvLauncherOptions(), _time);
 
     private static AppUpdateCheckResult Ready(string version) =>
-        new(AppUpdateCheckOutcome.UpdateReady, new AppUpdateInfo("0.5.0", version, null, null!));
+        AppUpdateCheckResult.Ready(new AppUpdateInfo("0.5.0", version, null, null!));
 
     private sealed class FakeAppUpdateService : IAppUpdateService
     {
-        public AppUpdateCheckResult Next { get; set; } = new(AppUpdateCheckOutcome.UpToDate);
+        public AppUpdateCheckResult Next { get; set; } = AppUpdateCheckResult.UpToDate;
 
         /// <summary>When set, checks wait for this instead of answering <see cref="Next"/> at once.</summary>
         public TaskCompletionSource<AppUpdateCheckResult>? Pending { get; set; }

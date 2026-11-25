@@ -43,7 +43,12 @@ public partial class App : Application
                 .AddJsonFile("appsettings.local.json", optional: true))
             .ConfigureServices((context, services) =>
             {
-                services.Configure<TvLauncherOptions>(context.Configuration.GetSection("TvLauncher"));
+                services.AddOptions<TvLauncherOptions>()
+                    .Bind(context.Configuration.GetSection("TvLauncher"))
+                    .Validate(
+                        o => o.UpdateCheckIntervalHours >= TvLauncherOptions.MinimumUpdateCheckIntervalHours,
+                        $"TvLauncher:UpdateCheckIntervalHours must be at least {TvLauncherOptions.MinimumUpdateCheckIntervalHours}.")
+                    .ValidateOnStart();
                 services.AddHttpClient<IGamesApiClient, GamesApiClient>();
                 services.AddHttpClient<IMediaCatalogApiClient, MediaCatalogApiClient>();
                 services.AddHttpClient<IMediaLibraryApiClient, MediaLibraryApiClient>();

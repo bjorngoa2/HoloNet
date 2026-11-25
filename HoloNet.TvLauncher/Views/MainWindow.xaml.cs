@@ -36,7 +36,8 @@ public partial class MainWindow : Window
     private readonly FolderNavigator _navigator;
     private readonly ScreensaverController _screensaver;
     private readonly AppUpdateTracker _updates;
-    private readonly DispatcherTimer _updateCheckTimer;
+    private readonly AppUpdateScheduler _updateScheduler;
+    private readonly string _displayVersion;
     private readonly CursorAutoHider _cursorHider;
     private readonly DispatcherTimer _clockTimer;
     private int _selectedIndex;
@@ -114,26 +115,20 @@ public partial class MainWindow : Window
         _kioskBrowserLauncher = kioskBrowserLauncher;
         _mediaSessionService = mediaSessionService;
         _options = options.Value;
+        _displayVersion = FormatDisplayVersion(_appUpdateService.CurrentVersion);
 
         _cursorHider = new CursorAutoHider(this);
         _screensaver = new ScreensaverController(_options, settingsStore, ScreensaverGrid, screensaverScenes, () => _isBusy);
         _navigator = new FolderNavigator(
             _options,
             settingsStore,
-            new SettingsMenu(_options, settingsStore, _screensaver.Show, FormatDisplayVersion(_appUpdateService.CurrentVersion)));
+            new SettingsMenu(_options, settingsStore, _screensaver.Show, _displayVersion));
 
         // Checks run on the UI thread, but hop through the dispatcher anyway so a check that ever
         // finishes elsewhere can't touch the window off-thread.
         _updates = new AppUpdateTracker(_appUpdateService, _options, TimeProvider.System);
         _updates.Changed += () => Dispatcher.InvokeAsync(UpdateChrome);
-        // At least 15 minutes apart whatever the setting says, to stay well inside GitHub's
-        // rate limit for unauthenticated requests.
-        _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(Math.Max(_options.UpdateCheckIntervalHours, 0.25)) };
-        _updateCheckTimer.Tick += (_, _) => _ = _updates.CheckInBackgroundAsync();
-
-        // The TV is unattended while the screensaver is up, a good moment to fetch an update so
-        // it's ready to offer when the player comes back.
-        _screensaver.Shown += () => _ = _updates.CheckInBackgroundAsync(AppUpdateTracker.ScreensaverCheckMinimumAge);
+        _updateScheduler = new AppUpdateScheduler(_updates, _options, _screensaver);
 
         _clockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clockTimer.Tick += (_, _) => UpdateClock();
@@ -141,7 +136,7 @@ public partial class MainWindow : Window
 
         _gamepadService.ButtonPressed += OnGamepadButtonPressed;
         _gamepadService.ControllerKindChanged += OnControllerKindChanged;
-        VersionText.Text = $"v{FormatDisplayVersion(_appUpdateService.CurrentVersion)}";
+        VersionText.Text = $"v{_displayVersion}";
         Loaded += async (_, _) =>
         {
             var windowHandle = new WindowInteropHelper(this).Handle;
@@ -152,17 +147,16 @@ public partial class MainWindow : Window
             await RefreshAsync();
             _gamepadService.Start();
             _screensaver.Start();
-            _ = _updates.CheckInBackgroundAsync();
-            _updateCheckTimer.Start();
+            _updateScheduler.Start();
         };
         Closed += (_, _) =>
         {
             _clockTimer.Stop();
-            _updateCheckTimer.Stop();
             _gamepadService.Stop();
             _gamepadService.ButtonPressed -= OnGamepadButtonPressed;
             _gamepadService.ControllerKindChanged -= OnControllerKindChanged;
             _hwndSource?.RemoveHook(HandleWindowMessage);
+            _updateScheduler.Dispose();
             _screensaver.Dispose();
             _cursorHider.Dispose();
         };
@@ -293,17 +287,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Whether an update found by <see cref="AppUpdateTracker"/> is waiting to be offered. Rather
-    /// than interrupting with a dialog, it adds an "Update ready" notice to the top bar and turns
-    /// the Menu hint into "Install update"; pressing Menu then opens the confirm prompt (see
-    /// <see cref="ShowUpdateModalAsync"/>).
-    /// </summary>
-    private bool IsUpdatePending => _updates.IsPending;
-
-    /// <summary>
-    /// Asks whether to install the downloaded update now, with an explicit Install/Later choice,
-    /// and applies it only if the player picks Install. "Later" puts that version off (Menu goes
-    /// back to meaning Refresh) until a newer one comes out or the player checks from Settings.
+    /// Offers an update found by <see cref="AppUpdateTracker"/>: asks whether to install it now,
+    /// with an explicit Install/Later choice, and applies it only if the player picks Install.
+    /// Rather than interrupting with this dialog, a pending update adds an "Update ready" notice
+    /// to the top bar and turns the Menu hint into "Install update"; Menu (or Settings → Check
+    /// for updates) then opens it. "Later" puts that version off (Menu goes back to meaning
+    /// Refresh) until a newer one comes out or the player checks from Settings.
     /// </summary>
     private async Task ShowUpdateModalAsync(AppUpdateInfo update)
     {
@@ -350,13 +339,13 @@ public partial class MainWindow : Window
             var (title, message) = result.Outcome switch
             {
                 AppUpdateCheckOutcome.UpToDate =>
-                    ("HoloNet is up to date", $"v{FormatDisplayVersion(_appUpdateService.CurrentVersion)} is the latest version."),
+                    ("HoloNet is up to date", $"v{_displayVersion} is the latest version."),
                 AppUpdateCheckOutcome.NotInstalled =>
                     ("This copy can't update itself", "Updates only work for HoloNet installed with its Setup program from GitHub."),
                 _ =>
                     ("Couldn't check for updates", "GitHub couldn't be reached. Check the internet connection and try again.")
             };
-            await ShowErrorAsync(card, title, message);
+            await ShowMessageAsync(card, title, message);
         }
         finally
         {
@@ -439,7 +428,7 @@ public partial class MainWindow : Window
                 SelectedCard,
                 CanRestartSelected(),
                 _navigator.CanGoBack,
-                IsUpdatePending,
+                _updates.IsPending,
                 CanRemoveSelected(),
                 CanMove: _navigator.CanMove(_selectedIndex),
                 IsMoving: _navigator.IsMoving));
@@ -742,7 +731,7 @@ public partial class MainWindow : Window
         }
 
         if (!_gameLauncher.LaunchShortcut(shortcut.Shortcut.Url))
-            await ShowErrorAsync(shortcut, $"Couldn't open {shortcut.Title}", "The link couldn't be opened.");
+            await ShowMessageAsync(shortcut, $"Couldn't open {shortcut.Title}", "The link couldn't be opened.");
     }
 
     /// <summary>
@@ -778,7 +767,7 @@ public partial class MainWindow : Window
         var deepLinkUrl = media.Media.DeepLinkUrl;
         if (string.IsNullOrWhiteSpace(deepLinkUrl))
         {
-            await ShowErrorAsync(media, $"Couldn't play {media.Title}", "This title has no link to open.");
+            await ShowMessageAsync(media, $"Couldn't play {media.Title}", "This title has no link to open.");
             return;
         }
 
@@ -787,7 +776,7 @@ public partial class MainWindow : Window
         if (!isMovieOrEpisode || string.IsNullOrWhiteSpace(_options.PrimePlayerToolPath))
         {
             if (!_gameLauncher.LaunchShortcut(deepLinkUrl))
-                await ShowErrorAsync(media, linkFailure.Title, linkFailure.Message);
+                await ShowMessageAsync(media, linkFailure.Title, linkFailure.Message);
             return;
         }
 
@@ -968,14 +957,14 @@ public partial class MainWindow : Window
         var service = StreamingService.ForProvider(added.Provider);
         if (service is null)
         {
-            await ShowErrorAsync(card, $"Added {added.Title}", "It's from a streaming service this launcher doesn't show.");
+            await ShowMessageAsync(card, $"Added {added.Title}", "It's from a streaming service this launcher doesn't show.");
             return;
         }
 
         var title = await _streamingLibrary.LoadTitleAsync(service, added.ProviderMediaId);
         if (title is null)
         {
-            await ShowErrorAsync(card, $"Added {added.Title}", $"It'll appear in {service.Name} once its details can be loaded.");
+            await ShowMessageAsync(card, $"Added {added.Title}", $"It'll appear in {service.Name} once its details can be loaded.");
             return;
         }
 
@@ -985,7 +974,7 @@ public partial class MainWindow : Window
         ShowCurrentScreen(Math.Max(_navigator.Cards.IndexOf(title.Card), 0));
 
         if (service != card.Service)
-            await ShowErrorAsync(title.Card, $"Added {added.Title}", $"It's a {service.Name} title, so it's in the {service.Name} folder.");
+            await ShowMessageAsync(title.Card, $"Added {added.Title}", $"It's a {service.Name} title, so it's in the {service.Name} folder.");
     }
 
     /// <summary>
@@ -1016,7 +1005,7 @@ public partial class MainWindow : Window
             Splash.Show(new SplashContent(card.Title, "Removing…", card, IsWorking: true));
             if (!await _mediaLibraryApiClient.RemoveAsync(service.CatalogProvider, title.LibraryId))
             {
-                await ShowErrorAsync(card, $"Couldn't remove {card.Title}", "HoloNet.Video couldn't be reached. Try again in a moment.");
+                await ShowMessageAsync(card, $"Couldn't remove {card.Title}", "HoloNet.Video couldn't be reached. Try again in a moment.");
                 return;
             }
 
@@ -1094,7 +1083,7 @@ public partial class MainWindow : Window
             _gamepadService.ForceDirectInputReacquire();
 
             if (failure is not null)
-                await ShowErrorAsync(card, failure.Title, failure.Message);
+                await ShowMessageAsync(card, failure.Title, failure.Message);
         }
         finally
         {
@@ -1122,11 +1111,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Shows an error on the splash and waits for the player to dismiss it. Input is routed
-    /// to the dismissal while it's up (see <see cref="HandleButton"/>), so Confirm can't also
-    /// relaunch the focused tile behind it.
+    /// Shows a message, usually an error, on the splash and waits for the player to dismiss it
+    /// with OK. Input is routed to the dismissal while it's up (see <see cref="HandleButton"/>),
+    /// so Confirm can't also relaunch the focused tile behind it.
     /// </summary>
-    private async Task ShowErrorAsync(IPickerCard card, string title, string? message)
+    private async Task ShowMessageAsync(IPickerCard card, string title, string? message)
     {
         var wasBusy = _isBusy;
         _isBusy = true;
