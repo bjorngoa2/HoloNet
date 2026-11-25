@@ -19,7 +19,7 @@ builder.Services.AddOptions<GameServiceOptions>()
 builder.Services.AddScoped<IGameService, GameService>();
 
 builder.Services.AddOpenApi();
-builder.Services.AddProblemDetails();
+builder.Services.AddHoloNetProblemDetails();
 builder.Services.AddHealthChecks()
     .AddCheck("media_directory", new MediaDirectoryHealthCheck(
         builder.Configuration["GameService:GamePath"] ?? string.Empty));

@@ -1,55 +1,29 @@
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using HoloNet.TvLauncher.Configuration;
 
 namespace HoloNet.TvLauncher.Views;
 
 /// <summary>
 /// Presentation wrapper around a configured <see cref="ShortcutMapping"/> for binding in the
-/// picker grid, alongside <see cref="GameCardViewModel"/> (see <see cref="IPickerCard"/>).
-/// Unlike a game, launching one just opens <see cref="Shortcut"/>'s URL in the default browser —
-/// there's no emulator process to track, no save stats, and no showcase screenshot.
+/// picker, alongside <see cref="GameCardViewModel"/> (see <see cref="IPickerCard"/>). Unlike a
+/// game, launching one opens <see cref="Shortcut"/>'s URL in a browser (the default one, or
+/// kiosk-mode Firefox - see <see cref="ShortcutMapping.Kiosk"/>) — there's no save stats or
+/// showcase screenshot.
 /// </summary>
-public class ShortcutCardViewModel(ShortcutMapping shortcut) : IPickerCard
+public class ShortcutCardViewModel(ShortcutMapping shortcut) : PickerCardBase
 {
-    private bool _isSelected;
-
     public ShortcutMapping Shortcut { get; } = shortcut;
 
-    public string Title => Shortcut.Title;
+    public override string Title => Shortcut.Title;
 
-    public string Subtitle => "App";
+    public override string Subtitle => Shortcut.Kiosk ? "App · Ad-free" : "App";
 
-    public string InitialsGlyph => string.Concat(Shortcut.Title
-        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-        .Take(2)
-        .Select(word => char.ToUpperInvariant(word[0])));
+    public override string? Description => Shortcut.Description;
 
-    public string? ThumbnailUrl => Shortcut.ThumbnailUrl;
+    public override string? ThumbnailUrl => Shortcut.ThumbnailUrl;
 
-    public bool HasThumbnail => !string.IsNullOrWhiteSpace(Shortcut.ThumbnailUrl);
+    public override string? IconGlyph => TileIcons.FromName(Shortcut.Icon);
 
-    public bool ShowInitials => !HasThumbnail;
+    public override string AccentColor => string.IsNullOrWhiteSpace(Shortcut.AccentColor) ? DefaultAccentColor : Shortcut.AccentColor;
 
-    public bool IsFolder => false;
-
-    public TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitShortcut(this);
-
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected == value)
-                return;
-
-            _isSelected = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    public override TResult Accept<TResult>(IPickerCardVisitor<TResult> visitor) => visitor.VisitShortcut(this);
 }

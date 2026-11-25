@@ -1,6 +1,56 @@
 @HoloNet.Video_HostAddress = http://localhost:5044
 
-GET {{HoloNet.Video_HostAddress}}/weatherforecast/
+GET {{HoloNet.Video_HostAddress}}/api/v1/health
+
+###
+
+GET {{HoloNet.Video_HostAddress}}/api/v1/videos
 Accept: application/json
+
+###
+
+# A Disney+ series (Star Wars: The Clone Wars), with every season and episode
+GET {{HoloNet.Video_HostAddress}}/api/v1/catalog/disneyplus/314f14b4-b70a-4ec6-b634-2559f0b1f77e
+Accept: application/json
+
+###
+
+# An HBO Max series (The Big Bang Theory), with every season and episode
+GET {{HoloNet.Video_HostAddress}}/api/v1/catalog/hbomax/c8ea8e19-cae7-4683-9b62-cdbbed744784
+Accept: application/json
+
+###
+
+GET {{HoloNet.Video_HostAddress}}/api/v1/admin/primevideo/session-cookie/status
+Accept: application/json
+
+###
+
+# The titles listed in the TV launcher's streaming folders, newest first
+GET {{HoloNet.Video_HostAddress}}/api/v1/library
+Accept: application/json
+
+###
+
+# Add a title from a Prime Video, Disney+ or HBO Max link (or bare Prime/Disney+ id); the service is worked out from the link
+POST {{HoloNet.Video_HostAddress}}/api/v1/library
+Content-Type: application/json
+
+{
+  "urlOrId": "https://www.disneyplus.com/browse/entity-314f14b4-b70a-4ec6-b634-2559f0b1f77e"
+}
+
+###
+
+POST {{HoloNet.Video_HostAddress}}/api/v1/library
+Content-Type: application/json
+
+{
+  "urlOrId": "https://www.hbomax.com/no/en/shows/big-bang-theory/c8ea8e19-cae7-4683-9b62-cdbbed744784"
+}
+
+###
+
+DELETE {{HoloNet.Video_HostAddress}}/api/v1/library/DisneyPlus/314f14b4-b70a-4ec6-b634-2559f0b1f77e
 
 ###
